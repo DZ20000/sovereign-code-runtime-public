@@ -1,0 +1,118 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  color: #eceef2;
+  background: #1e1f22;
+  --approval-muted: #b2b6c0;
+  --approval-line: #3a3d45;
+  --approval-accent: #a1b5f8;
+  --ui-radius-control: 10px;
+  --ui-radius-panel: 16px;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { width: 100%; height: 100%; margin: 0; }
+body { overflow: hidden; }
+button, code, pre { font: inherit; }
+::selection { background: #435786; color: #fff; }
+
+.approval-shell {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: 100%;
+  min-width: 0;
+  padding: 1.1rem 1.25rem;
+  gap: 1rem;
+}
+
+.approval-header, .approval-actions, .approval-tool-row {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+}
+
+.approval-header { justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }
+.approval-heading { min-width: 0; }
+h1 { margin: 0; font-size: 1.3rem; line-height: 1.35; font-weight: 650; overflow-wrap: anywhere; }
+.approval-source { margin: .3rem 0 0; color: var(--approval-muted); font-size: .9rem; }
+
+.approval-countdown {
+  flex: 0 0 auto;
+  padding: .35rem .55rem;
+  border: 1px solid var(--approval-line);
+  border-radius: var(--ui-radius-control);
+  corner-shape: superellipse(2);
+  color: var(--approval-muted);
+  font-size: .9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.approval-content {
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  padding-right: .35rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.approval-content > :first-child { margin-top: 0; }
+.approval-guidance, .approval-expiry-note { color: var(--approval-muted); font-size: .9rem; }
+.approval-message { margin: .75rem 0; }
+.approval-tool-row { align-items: baseline; justify-content: space-between; padding: .65rem 0; border-block: 1px solid var(--approval-line); }
+.approval-tool-row > span { color: var(--approval-muted); }
+.approval-tool-row code { min-width: 0; overflow-wrap: anywhere; }
+.approval-details { margin-top: .65rem; }
+.approval-details summary { width: fit-content; padding: .4rem 0; cursor: pointer; font-weight: 600; }
+.approval-detail {
+  margin: .45rem 0;
+  padding: .75rem;
+  border: 1px solid var(--approval-line);
+  border-radius: var(--ui-radius-panel);
+  corner-shape: superellipse(2);
+  background: #24262b;
+  color: #d2d6df;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .9rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.approval-feedback:empty { display: none; }
+.approval-feedback { flex-basis: 100%; margin: 0; color: var(--approval-accent); line-height: 1.45; }
+.approval-feedback.is-error { color: #f4b7bb; }
+.approval-actions { flex-wrap: wrap; border-top: 1px solid var(--approval-line); padding-top: .9rem; }
+.approval-spacer { flex: 1; }
+.button {
+  min-height: 2.65rem;
+  padding: .55rem .85rem;
+  border: 1px solid var(--approval-line);
+  border-radius: var(--ui-radius-panel);
+  corner-shape: superellipse(2);
+  color: inherit;
+  background: #2a2d33;
+  cursor: pointer;
+  font-weight: 600;
+  line-height: 1.3;
+  transition: background-color 160ms ease-out, border-color 160ms ease-out;
+}
+.button:hover { background: #363b46; border-color: #646c7c; }
+.button:active { background: #20232a; }
+.button-primary { color: #fff; background: #46619d; border-color: #7795d5; }
+.button-primary:hover { background: #526faf; border-color: #a1b5f8; }
+.button-primary:active { background: #3a5189; }
+.button-danger { flex-basis: 100%; color: #f4b7bb; background: transparent; border-color: #785156; }
+.button-danger:hover { background: #422d32; border-color: #b5787f; }
+.button:disabled { color: #a8abb3; background: #282a30; border-color: #3a3d45; cursor: default; }
+:is(button, summary, [tabindex]):focus-visible { outline: 2px solid var(--approval-accent); outline-offset: 3px; }
+.approval-shell.is-flood h1 { color: #f4b7bb; }
+
+@media (max-width: 480px) {
+  .approval-shell { padding: .9rem 1rem; gap: .75rem; }
+}
+@media (prefers-reduced-motion: reduce) { .button { transition: none; } }
+html[data-reduced-motion="true"] .button { transition: none; }

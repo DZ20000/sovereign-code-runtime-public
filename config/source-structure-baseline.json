@@ -1,0 +1,133 @@
+{
+  "schemaVersion": "scr.source-structure-baseline/v1",
+  "generatedFromHead": "fd9e292c3cf1ab761792b6755a451b588b29f2da",
+  "policy": "Existing oversized source is explicit and capped. New oversized files and growth beyond an existing ceiling fail; shrinking debt is always allowed.",
+  "entries": [
+    {
+      "path": "apps/desktop-tauri/src-tauri/src/lib.rs",
+      "observedLines": 1466,
+      "maximumLines": 1466,
+      "reason": "Reviewed desktop quick-update candidate ceiling after validated network/guardian recovery integration; further growth still requires a cohesive extraction."
+    },
+    {
+      "path": "apps/desktop-tauri/src-tauri/src/renderer_update.rs",
+      "observedLines": 4001,
+      "maximumLines": 4001,
+      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
+    },
+    {
+      "path": "apps/desktop-tauri/src-tauri/src/runtime_candidate_update.rs",
+      "observedLines": 1863,
+      "maximumLines": 1863,
+      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
+    },
+    {
+      "path": "apps/desktop/native/SovereignNativeAgent.cs",
+      "observedLines": 1385,
+      "maximumLines": 1385,
+      "reason": "This file was already 1385 lines at generatedFromHead but was omitted from the initial debt inventory; preserve that historical ceiling while extracting native-agent responsibilities before further growth."
+    },
+    {
+      "path": "apps/desktop/src/main.ts",
+      "observedLines": 1318,
+      "maximumLines": 1318,
+      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
+    },
+    {
+      "path": "apps/desktop/src/renderer/main.ts",
+      "observedLines": 5009,
+      "maximumLines": 5009,
+      "reason": "Existing oversized module captured when the guard was activated; the latest committed main includes one reviewed stylesheet import, and further growth requires a cohesive extraction."
+    },
+    {
+      "path": "apps/desktop/src/renderer/product-shell.css",
+      "observedLines": 1322,
+      "maximumLines": 1322,
+      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
+    },
+    {
+      "path": "apps/desktop/src/renderer/styles.css",
+      "observedLines": 3538,
+      "maximumLines": 3538,
+      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
+    },
+    {
+      "path": "apps/desktop/src/renderer/tasks-controller.ts",
+      "observedLines": 1530,
+      "maximumLines": 1530,
+      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
+    },
+    {
+      "path": "apps/desktop/src/renderer/ui-refinement.css",
+      "observedLines": 4521,
+      "maximumLines": 4521,
+      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
+    },
+    {
+      "path": "apps/desktop/src/renderer/ui-system.css",
+      "observedLines": 2317,
+      "maximumLines": 2317,
+      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
+    },
+    {
+      "path": "apps/desktop/src/renderer/workbench.css",
+      "observedLines": 4223,
+      "maximumLines": 4223,
+      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
+    },
+    {
+      "path": "apps/desktop/src/visual-test.ts",
+      "observedLines": 4573,
+      "maximumLines": 4573,
+      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
+    },
+    {
+      "path": "packages/control-plane/src/controller.ts",
+      "observedLines": 2770,
+      "maximumLines": 2770,
+      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
+    },
+    {
+      "path": "packages/control-plane/src/sandbox-manager.ts",
+      "observedLines": 1265,
+      "maximumLines": 1265,
+      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
+    },
+    {
+      "path": "packages/control-plane/src/secure-tunnel.ts",
+      "observedLines": 1270,
+      "maximumLines": 1270,
+      "reason": "Connector option validation and process primitives were extracted to secure-tunnel-support.ts; the ceiling follows the smaller file."
+    },
+    {
+      "path": "packages/control-plane/src/task-registry.ts",
+      "observedLines": 1837,
+      "maximumLines": 1837,
+      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
+    },
+    {
+      "path": "packages/toolkit/src/index.ts",
+      "observedLines": 2597,
+      "maximumLines": 2597,
+      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
+    },
+    {
+      "path": "packages/update-core/src/candidate-slot.ts",
+      "observedLines": 1276,
+      "maximumLines": 1276,
+      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
+    },
+    {
+      "path": "packages/update-core/src/runtime-supervisor-state.ts",
+      "observedLines": 1263,
+      "maximumLines": 1263,
+      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
+    },
+    {
+      "path": "packages/windows-adapter/src/index.ts",
+      "observedLines": 3162,
+      "maximumLines": 3162,
+      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
+    }
+  ]
+}

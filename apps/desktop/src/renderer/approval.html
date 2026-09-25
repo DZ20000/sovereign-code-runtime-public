@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'none'; connect-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sovereign approval</title>
+    <link rel="stylesheet" href="./approval.css" />
+  </head>
+  <body>
+    <main class="approval-shell" aria-labelledby="approval-title">
+      <section class="approval-content" tabindex="0" aria-label="Approval request">
+      <header class="approval-header">
+        <div class="approval-heading">
+          <h1 id="approval-title">Approval required</h1>
+          <p class="approval-source">Connected Web Agent</p>
+        </div>
+        <div id="approval-countdown" class="approval-countdown" role="timer" aria-live="off" data-no-i18n>—</div>
+      </header>
+
+        <p class="approval-guidance">Review the action and its scope before allowing it.</p>
+        <p id="approval-message" class="approval-message">Loading request…</p>
+        <div class="approval-tool-row">
+          <span>Tool</span>
+          <code id="approval-tool" data-no-i18n>—</code>
+        </div>
+        <details class="approval-details" open>
+          <summary>Request details</summary>
+          <pre id="approval-detail" class="approval-detail" data-no-i18n></pre>
+        </details>
+        <p class="approval-expiry-note">No response before expiry means this request is denied.</p>
+      </section>
+
+      <footer class="approval-actions">
+        <p id="approval-feedback" class="approval-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
+        <button id="approval-drop" class="button button-danger" type="button" hidden disabled>Deny all &amp; drop to L1</button>
+        <span class="approval-spacer"></span>
+        <button id="approval-deny" class="button button-secondary" type="button" disabled>Deny</button>
+        <button id="approval-allow" class="button button-primary" type="button" disabled>Allow once</button>
+      </footer>
+    </main>
+    <script type="module" src="./approval.ts"></script>
+  </body>
+</html>

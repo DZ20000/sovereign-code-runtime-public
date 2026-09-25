@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "approval-webview",
+  "description": "Only permits the dedicated Sovereign approval window to read and resolve its active request.",
+  "windows": ["approval"],
+  "permissions": [
+    "allow-approval-current",
+    "allow-approval-resolve"
+  ]
+}

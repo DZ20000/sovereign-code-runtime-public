@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "renderer-preflight-webview",
+  "description": "Read-only permissions for hidden signed renderer candidate preflight webviews.",
+  "windows": ["renderer-preflight-*"],
+  "permissions": [
+    "allow-ui-ready",
+    "allow-renderer-preflight-control-call",
+    "allow-resource-snapshot",
+    "allow-host-startup-state",
+    "core:event:allow-listen",
+    "core:webview:allow-set-webview-zoom"
+  ]
+}

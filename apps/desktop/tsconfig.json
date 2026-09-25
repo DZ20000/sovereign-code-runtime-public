@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client"],
+    "isolatedModules": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "vite.main.config.ts",
+    "vite.preload.config.ts",
+    "vite.approval-preload.config.ts",
+    "vite.renderer.config.ts",
+    "vite.visual.config.ts"
+  ]
+}

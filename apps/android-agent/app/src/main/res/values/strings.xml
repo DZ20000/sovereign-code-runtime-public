@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sovereign Android Runtime</string>
+    <string name="accessibility_service_label">Sovereign UI Adapter</string>
+    <string name="accessibility_service_description">Allows Sovereign to observe a bounded accessibility tree and perform revision-bound actions that you authorize. It does not enable Root or unrestricted shell access.</string>
+    <string name="notification_listener_label">Sovereign Notification Adapter</string>
+    <string name="notification_listener_description">Allows Sovereign to report bounded active-notification status and locally redacted current content. It does not read history or dispatch notification actions in this build.</string>
+    <string name="gateway_notification_channel_name">Local MCP gateway</string>
+    <string name="gateway_notification_channel_description">Shows when the authenticated Sovereign MCP gateway is listening on this phone\'s loopback interface.</string>
+    <string name="gateway_notification_starting_title">Starting local MCP gateway</string>
+    <string name="gateway_notification_starting_detail">Preparing an authenticated 127.0.0.1-only MCP endpoint.</string>
+    <string name="gateway_notification_running_title">Local MCP gateway is running</string>
+    <string name="gateway_notification_error_title">Local MCP gateway needs attention</string>
+    <string name="gateway_notification_error_detail">Listener shutdown was not confirmed. Keep this notification visible and retry Stop.</string>
+    <string name="gateway_notification_approval_title">Local approval required</string>
+    <plurals name="gateway_notification_approval_detail">
+        <item quantity="one">%1$s · %2$d second remaining · tap to review</item>
+        <item quantity="other">%1$s · %2$d seconds remaining · tap to review</item>
+    </plurals>
+    <string name="approval_notification_channel_name">Local approvals</string>
+    <string name="approval_notification_channel_description">Alerts you when a remote Android tool is waiting for one-time local approval.</string>
+    <plurals name="gateway_notification_running_detail">
+        <item quantity="one">Loopback port %1$d · %2$d session · key %3$s</item>
+        <item quantity="other">Loopback port %1$d · %2$d sessions · key %3$s</item>
+    </plurals>
+    <string name="gateway_notification_stop_action">Stop gateway</string>
+    <string name="screen_projection_channel_name">Local screen consent</string>
+    <string name="screen_projection_channel_description">Shows while locally approved Android screen-projection ownership is active.</string>
+    <string name="screen_projection_notification_title">Local screen consent is active</string>
+    <string name="screen_projection_notification_text">Sovereign holds a process-local Android screen-projection session for at most five minutes.</string>
+    <string name="screen_projection_notification_stop">Stop screen consent</string>
+</resources>

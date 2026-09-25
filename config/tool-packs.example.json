@@ -1,0 +1,4 @@
+{
+  "schemaVersion": "scr.tool-packs/v1",
+  "enabled": ["developer-essentials"]
+}

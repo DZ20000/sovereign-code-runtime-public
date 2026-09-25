@@ -1,0 +1,491 @@
+/* Task state, conversation and popover content. Workspace layout lives in task-board.css. */
+.task-chip,
+.task-project-state,
+.task-agent-presence,
+.task-summary-source,
+.task-message-delivery,
+.task-conversation-delivery {
+  color: var(--ui-text-muted);
+}
+
+.task-chip-running,
+.task-chip-planning,
+.task-chip-queued,
+.task-chip-succeeded,
+.task-project-state-active,
+.task-project-state-completed,
+.task-agent-online,
+.task-agent-activity,
+.task-message-delivery-acknowledged,
+.task-conversation-delivery-acknowledged,
+.task-conversation-delivery-online {
+  color: var(--ui-accent);
+}
+
+.task-chip-waiting-user,
+.task-chip-blocked,
+.task-chip-failed,
+.task-chip-interrupted,
+.task-chip-unassigned,
+.task-chip-follow-up-pending,
+.task-chip-unclaimed-message,
+.task-project-state-attention,
+.task-agent-stale,
+.task-agent-offline,
+.task-unread-count,
+.task-detail-freshness,
+.task-message-delivery-pending,
+.task-conversation-delivery-pending {
+  color: var(--ui-warning);
+}
+
+.task-chip-observed-activity,
+.task-chip-activity-ended,
+.task-message-delivery-stored,
+.task-conversation-delivery-stored {
+  color: var(--ui-text-muted);
+}
+
+.task-summary-progress-track,
+.task-progress-track {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 2px;
+  background: var(--ui-border-subtle);
+}
+
+.task-summary-progress-track > i,
+.task-progress-track > span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ui-accent);
+}
+
+.task-message-header-meta {
+  display: inline-flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 10px;
+}
+
+.task-message-character-count {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.task-summary-progress small,
+.task-progress-row,
+.task-board-lane strong {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Conversation surface and its independent message scroll region. */
+#view-tasks .task-conversation-card {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+#view-tasks .task-conversation-header {
+  display: flex;
+  min-height: 26px;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 4px 18px;
+}
+
+#view-tasks .task-conversation-delivery {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+#view-tasks .task-message-history-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+#view-tasks .task-message-history-controls:has(button:not([hidden])),
+#view-tasks .task-message-history-controls:has([role="status"]:not(:empty)) {
+  box-sizing: border-box;
+  min-height: 48px;
+  padding: 8px 18px;
+}
+
+#view-tasks .task-message-history-controls .button {
+  min-height: 28px;
+  padding-block: 3px;
+}
+
+#view-tasks .task-message-list {
+  min-width: 0;
+  min-height: 0;
+  padding: 16px 24px 8px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scroll-padding-block: 16px;
+}
+
+#view-tasks .task-message-list:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
+}
+
+#view-tasks .task-message {
+  max-width: min(100%, 75ch);
+  margin: 0 0 22px;
+  color: var(--ui-text);
+}
+
+#view-tasks .task-message-user {
+  max-width: min(92%, 68ch);
+  margin-left: auto;
+  padding: 12px 14px;
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface);
+}
+
+#view-tasks .task-message header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-bottom: 6px;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+#view-tasks .task-message header strong {
+  font-weight: 600;
+}
+
+#view-tasks :is(.task-message time, .task-message-delivery) {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+#view-tasks .task-message-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: var(--ui-text);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+#view-tasks .task-message-system .task-message-content {
+  color: var(--ui-text-muted);
+}
+
+#view-tasks .task-message-form {
+  display: grid;
+  gap: 8px;
+  padding: 12px 18px 16px;
+  border-top: 1px solid var(--ui-border-subtle);
+  background: var(--ui-canvas);
+}
+
+#view-tasks .task-message-form > label {
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+#view-tasks .task-message-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 72px;
+  max-height: min(180px, 30vh);
+  padding: 10px 12px;
+  resize: vertical;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+#view-tasks .task-message-form-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+#view-tasks #task-message-shortcuts {
+  flex: 1 1 160px;
+}
+
+#view-tasks .task-message-form .button-primary {
+  min-height: 32px;
+  margin-left: auto;
+  padding-inline: 12px;
+  border-color: transparent;
+  background: var(--ui-accent);
+  color: var(--ui-sidebar);
+}
+
+/* Information and step content inside native workbench popovers. */
+#view-tasks :is(#task-detail-summary, #task-detail-trust) {
+  margin: 10px 0;
+  color: var(--ui-text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+#view-tasks .task-workbench-popover .task-detail-card {
+  padding: 14px 0;
+  border: 0;
+  border-bottom: 1px solid var(--ui-border-subtle);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+#view-tasks .task-detail-card-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+#view-tasks .task-detail-card-heading h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+#view-tasks .task-detail-card-heading .state-text {
+  color: var(--ui-text-muted);
+  font-size: 12px;
+}
+
+#view-tasks .task-progress-track {
+  margin: 12px 0 8px;
+}
+
+#view-tasks .task-progress-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+#view-tasks .task-detail-progress-note {
+  margin: 8px 0 0;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+#view-tasks :is(.task-technical-details > summary, .task-coordination-summary) {
+  padding-block: 10px;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+#view-tasks .task-detail-metadata {
+  display: grid;
+  gap: 10px;
+  margin: 4px 0 0;
+}
+
+#view-tasks .task-detail-metadata > div {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(110px, 0.7fr) minmax(0, 1.3fr);
+  gap: 12px;
+}
+
+#view-tasks .task-detail-metadata dt {
+  color: var(--ui-text-muted);
+  font-size: 12px;
+}
+
+#view-tasks .task-detail-metadata dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--ui-text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+#view-tasks .task-detail-metadata code {
+  color: inherit;
+  font-size: 12px;
+}
+
+#view-tasks .task-project-terminal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+#view-tasks .task-project-terminal code {
+  min-width: 0;
+  flex: 1 1 100%;
+  overflow-wrap: anywhere;
+}
+
+#view-tasks .task-project-terminal-action {
+  min-height: 28px;
+  padding-inline: 0;
+  color: var(--ui-accent);
+  text-align: left;
+}
+
+#view-tasks .task-step-list {
+  display: grid;
+}
+
+#view-tasks .task-step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--ui-border-subtle);
+}
+
+#view-tasks .task-step:last-child {
+  border-bottom: 0;
+}
+
+#view-tasks .task-step-marker {
+  display: none;
+}
+
+#view-tasks .task-step-copy {
+  min-width: 0;
+}
+
+#view-tasks .task-step-title {
+  display: block;
+  color: var(--ui-text);
+  font-size: 14px;
+  font-weight: 550;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+#view-tasks :is(.task-step-updated, .task-step-state) {
+  display: block;
+  margin-top: 3px;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+#view-tasks .task-step-running .task-step-state {
+  color: var(--ui-accent);
+}
+
+#view-tasks .task-step-failed .task-step-state {
+  color: var(--ui-warning);
+}
+
+#view-tasks .task-workbench-popover .task-session-continuity-card::before {
+  content: none;
+}
+
+#view-tasks .task-workbench-popover .task-session-continuity-heading {
+  gap: 8px;
+}
+
+#view-tasks .task-workbench-popover .task-session-continuity-heading h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+#view-tasks .task-workbench-popover .task-session-continuity-state {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+#view-tasks .task-workbench-popover :is(.task-session-continuity-detail, .task-session-continuity-next) {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+#view-tasks .task-workbench-popover .task-session-continuity-grid {
+  gap: 10px;
+  margin: 12px 0 0;
+}
+
+#view-tasks .task-workbench-popover .task-session-continuity-grid > div {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+#view-tasks .task-workbench-popover :is(.task-session-continuity-grid dt, .task-session-continuity-grid dd, .task-session-continuity-next strong) {
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+#view-tasks .task-workbench-popover .task-coordination-message {
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 1px solid var(--ui-border-subtle);
+  border-radius: 0;
+  background: transparent;
+}
+
+#view-tasks .task-workbench-popover :is(.task-coordination-unread-count, .task-coordination-pending-count) {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+#view-tasks .task-workbench-popover .task-coordination-summary > span {
+  margin-right: 8px;
+}
+
+@media (max-width: 520px) {
+  #view-tasks .task-message-list {
+    padding-inline: 14px;
+  }
+
+  #view-tasks .task-message-form {
+    padding-inline: 14px;
+  }
+}

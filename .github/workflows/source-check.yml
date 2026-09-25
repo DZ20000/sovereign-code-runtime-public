@@ -1,0 +1,68 @@
+name: Windows source checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: source-check-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.13.0'
+      - run: npm install --global pnpm@10.15.1
+      - run: pnpm install --frozen-lockfile
+      - name: Canonicalize Windows temporary directory
+        shell: pwsh
+        run: |
+          $canonicalTemp = node --input-type=module -e "import { realpathSync } from 'node:fs'; process.stdout.write(realpathSync.native(process.env.TEMP));"
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($canonicalTemp)) {
+            throw 'Unable to resolve the Windows temporary directory.'
+          }
+          "TEMP=$canonicalTemp" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "TMP=$canonicalTemp" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Verify canonical Windows temporary directory
+        run: node --input-type=module -e "import { realpathSync } from 'node:fs'; const actual = realpathSync.native(process.env.TEMP); if (actual.toLowerCase() !== process.env.TEMP.toLowerCase() || process.env.TMP.toLowerCase() !== actual.toLowerCase()) process.exit(1);"
+      - run: pnpm typecheck
+      - run: pnpm test:products
+      - run: pnpm test:launchers
+      - name: Run parallel Vitest suite
+        run: pnpm exec vitest run --maxWorkers=4 --reporter=dot --exclude tests/integration/desktop-tunnel-routing.test.ts --exclude tests/integration/task-registry-capacity.test.ts
+      - name: Run Windows timing-sensitive integration tests serially
+        run: pnpm exec vitest run tests/integration/desktop-tunnel-routing.test.ts tests/integration/task-registry-capacity.test.ts --maxWorkers=1 --no-file-parallelism --reporter=dot
+      - run: pnpm --filter @sovereign/desktop-tauri run prepare:runtime
+      - run: pnpm --filter @sovereign/desktop-tauri run build:web
+      - run: pnpm audit --prod
+      - name: Verify checks did not modify source
+        shell: pwsh
+        run: |
+          git diff --exit-code
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (git ls-files --others --exclude-standard) { throw 'Checks left untracked source files.' }
+  full-dependency-audit:
+    # Intentionally not continue-on-error: new or unresolved findings must fail visibly.
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.13.0'
+      - run: npm install --global pnpm@10.15.1
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm audit

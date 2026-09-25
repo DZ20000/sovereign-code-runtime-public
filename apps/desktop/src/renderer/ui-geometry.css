@@ -1,0 +1,30 @@
+/*
+ * Shared geometry: corner shape and the minimum breathing room between content
+ * and a visible edge. Both are system-wide properties rather than per-view
+ * polish, and the visual harness audits the spacing as EDGE_CROWDING.
+ */
+
+:root {
+  --ui-radius-pill: 999px;
+  --ui-scrollbar-size: 10px;
+  /*
+   * One page gutter for every view. The scroll pane keeps a stable scrollbar
+   * gutter, which sits outside its padding box, so the inline-end padding
+   * subtracts it to leave both sides optically equal.
+   */
+  --ui-page-gutter: 32px;
+  --ui-page-gutter-end: max(12px, calc(var(--ui-page-gutter) - var(--ui-scrollbar-size)));
+}
+
+:where(*, *::before, *::after) {
+  corner-shape: squircle;
+}
+
+/* Toolbars and tab rows hold controls that would otherwise touch the divider. */
+:where(.page-toolbar, .pane-toolbar) {
+  padding-block: var(--ui-space-2);
+}
+
+:where(.settings-nav-row) {
+  padding-block: var(--ui-space-1);
+}

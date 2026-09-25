@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "scr.task-panel-focused-tests/v1",
+  "tests": [
+    "apps/desktop-tauri/test/task-coordination-bridge.test.ts",
+    "apps/desktop/test/task-coordination-controller.test.ts",
+    "apps/desktop/test/task-coordination-inbox.test.ts",
+    "apps/desktop/test/task-coordination-ipc.test.ts",
+    "apps/desktop/test/task-detail-a11y-contract.test.ts",
+    "apps/desktop/test/task-filter-controls.test.ts",
+    "apps/desktop/test/task-list-scroll-anchor.test.ts",
+    "apps/desktop/test/task-message-composer.test.ts",
+    "apps/desktop/test/task-message-order.test.ts",
+    "apps/desktop/test/task-message-snapshot-validation.test.ts",
+    "apps/desktop/test/task-message-visual-contract.test.ts",
+    "apps/desktop/test/task-project-order.test.ts",
+    "apps/desktop/test/task-step-integrity.test.ts",
+    "apps/desktop/test/task-summary-visual-contract.test.ts",
+    "apps/desktop/test/task-waiting-message-label.test.ts",
+    "tests/integration/task-agent-presence-static-guards.test.ts",
+    "tests/integration/task-coordination-operator-inbox.test.ts",
+    "tests/integration/task-coordination-replay.test.ts",
+    "tests/integration/task-detail-integrity-static-guards.test.ts",
+    "tests/integration/task-hub-session.test.ts",
+    "tests/integration/task-hub-static-guards.test.ts",
+    "tests/integration/task-list-scroll-anchor-static-guards.test.ts",
+    "tests/integration/task-search-capacity-static-guard.test.ts",
+    "tests/integration/task-summary-clipping-static-guards.test.ts"
+  ]
+}

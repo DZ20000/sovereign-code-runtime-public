@@ -1,0 +1,227 @@
+.task-coordination-card {
+  min-width: 0;
+}
+
+.task-coordination-card > .task-detail-card-heading {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.task-coordination-note {
+  margin: 10px 0 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.task-coordination-snapshot-status {
+  margin: -3px 0 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.task-coordination-snapshot-status:empty {
+  margin: 0;
+}
+
+.task-coordination-snapshot-status.is-stale {
+  color: var(--warning-text, #e8c18b);
+  font-weight: 650;
+}
+
+.task-coordination-snapshot-status.is-unavailable {
+  color: var(--danger-text, #e6a0a0);
+}
+
+.task-coordination-unread-count,
+.task-coordination-pending-count,
+.task-coordination-card-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--ui-radius-pill);
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.task-coordination-unread-count.has-unread,
+.task-coordination-pending-count.has-pending,
+.task-coordination-card-count {
+  border-color: rgba(216, 157, 84, 0.45);
+  color: var(--warning-text, #e8c18b);
+  background: rgba(216, 157, 84, 0.1);
+}
+
+.task-coordination-unread-count.is-stale,
+.task-coordination-pending-count.is-stale {
+  border-style: dashed;
+  color: var(--warning-text, #e8c18b);
+  background: rgba(216, 157, 84, 0.055);
+}
+
+.task-summary-footer .task-coordination-card-count {
+  margin-left: auto;
+}
+
+.task-coordination-history-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 30px;
+  margin: 0 0 10px;
+}
+
+.task-coordination-history-controls .button[hidden] {
+  display: none;
+}
+
+.task-coordination-history-status {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.task-coordination-history-status.is-error {
+  color: var(--danger-text, #e6a0a0);
+}
+
+.task-coordination-list {
+  display: grid;
+  gap: 9px;
+  max-height: 360px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.task-coordination-list.is-stale {
+  outline: 1px dashed rgba(216, 157, 84, 0.58);
+  outline-offset: 3px;
+}
+
+.task-coordination-state {
+  margin: 0;
+  padding: 11px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--ui-radius-control);
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.018);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.task-coordination-state-error {
+  border-color: rgba(207, 100, 100, 0.38);
+  color: var(--danger-text, #e6a0a0);
+}
+
+.task-coordination-message {
+  display: grid;
+  gap: 8px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--ui-radius-control);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.task-coordination-message > header,
+.task-coordination-message > footer,
+.task-coordination-message-chips {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.task-coordination-message > header {
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.task-coordination-message > header > strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-coordination-message-chips {
+  flex: 0 0 auto;
+}
+
+.task-coordination-kind,
+.task-coordination-delivery,
+.task-coordination-action-required {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 1px 6px;
+  border-radius: var(--ui-radius-pill);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.task-coordination-kind {
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.task-coordination-delivery {
+  color: var(--accent-text, #aac5ff);
+  background: rgba(109, 147, 230, 0.13);
+}
+
+.task-coordination-delivery-acknowledged,
+.task-coordination-delivery-replied,
+.task-coordination-delivery-read {
+  color: var(--success-text, #9ed3b0);
+  background: rgba(80, 168, 111, 0.12);
+}
+
+.task-coordination-delivery-cancelled,
+.task-coordination-delivery-expired,
+.task-coordination-delivery-recipient-changed {
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.task-coordination-content {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.task-coordination-message > footer {
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.task-coordination-action-required {
+  color: var(--warning-text, #e8c18b);
+  background: rgba(216, 157, 84, 0.1);
+}
+
+@media (max-width: 760px) {
+  .task-coordination-message > header,
+  .task-coordination-message > footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .task-summary-footer .task-coordination-card-count {
+    margin-left: 0;
+  }
+}

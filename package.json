@@ -1,0 +1,81 @@
+{
+  "name": "sovereign-code-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Clean-room, self-hosted Windows MCP Agent Runtime desktop application.",
+  "packageManager": "pnpm@10.15.1",
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "electron-winstaller",
+      "esbuild"
+    ],
+    "overrides": {
+      "fast-uri@>=3.0.0 <3.1.6": "3.1.6",
+      "qs@>=6.0.0 <6.16.0": "6.16.0",
+      "hono@>=4.0.0 <4.13.9": "4.13.9",
+      "@xmldom/xmldom@>=0.9.0 <0.9.12": "0.9.12",
+      "external-editor>tmp": "0.2.7",
+      "@electron-forge/core-utils>@electron/rebuild": "4.0.6",
+      "@electron-forge/core>@electron/rebuild": "4.0.6",
+      "@electron-forge/shared-types>@electron/rebuild": "4.0.6",
+      "tar@>=7.0.0 <7.5.21": "7.5.21",
+      "@electron/packager>extract-zip": "npm:@electron-internal/extract-zip@1.0.5"
+    }
+  },
+  "scripts": {
+    "products": "node scripts/products.mjs",
+    "products:open": "node scripts/products.mjs --open",
+    "test:products": "node --test scripts/products.test.mjs",
+    "test:launchers": "node --test apps/desktop-tauri/scripts/restart-portable.test.mjs apps/desktop-tauri/scripts/portable-launcher.test.mjs apps/desktop-tauri/scripts/installer-processes.test.mjs",
+    "audit:generated-artifacts": "node scripts/generated-artifact-inventory.mjs --root .",
+    "handoff:session": "node scripts/session-handoff.mjs --root . --stdin --output auto",
+    "clean": "node -e \"const fs=require('node:fs');for(const p of ['apps/gateway/dist','apps/desktop/dist','apps/desktop-tauri/dist','apps/runtime-host/dist','packages/control-plane-contract/dist','packages/control-plane/dist','packages/runtime-core/dist','packages/windows-adapter/dist','packages/toolkit/dist','packages/update-core/dist'])fs.rmSync(p,{recursive:true,force:true,maxRetries:20,retryDelay:250});\"",
+    "build:runtime": "tsc -b --pretty false",
+    "build:code": "pnpm build:runtime && pnpm --filter @sovereign/desktop run bundle",
+    "build:desktop": "pnpm --filter @sovereign/desktop-tauri run package:portable",
+    "build:legacy-electron": "pnpm --filter @sovereign/desktop run package",
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.tests.json --noEmit --pretty false && pnpm --filter @sovereign/desktop run typecheck && pnpm --filter @sovereign/desktop-tauri run typecheck",
+    "check:tauri": "pnpm --filter @sovereign/desktop-tauri run typecheck && pnpm --filter @sovereign/desktop-tauri run prepare:runtime && cargo check --manifest-path apps/desktop-tauri/src-tauri/Cargo.toml",
+    "test": "pnpm test:products && pnpm test:launchers && pnpm build:runtime && vitest run && pnpm --filter @sovereign/desktop run visual:test && pnpm --filter @sovereign/runtime-host run smoke:run && pnpm --filter @sovereign/desktop-tauri run test:rust && pnpm --filter @sovereign/desktop-tauri run smoke:guardian",
+    "test:task-panel:focused": "node scripts/task-panel-test-gate.mjs",
+    "test:visual": "pnpm --filter @sovereign/desktop run visual:test",
+    "test:tauri": "pnpm check:tauri && pnpm --filter @sovereign/desktop-tauri run test:rust && pnpm --filter @sovereign/desktop-tauri run smoke:restart-launcher && pnpm --filter @sovereign/desktop-tauri run smoke:portable && pnpm --filter @sovereign/desktop-tauri run smoke:guardian:packaged",
+    "build": "pnpm clean && pnpm build:desktop && pnpm --filter @sovereign/desktop-tauri run smoke:restart-launcher && pnpm --filter @sovereign/desktop-tauri run smoke:portable && pnpm --filter @sovereign/desktop-tauri run smoke:guardian:packaged",
+    "start": "pnpm --filter @sovereign/desktop-tauri run start:portable",
+    "restart": "pnpm --filter @sovereign/desktop-tauri run restart",
+    "restart:dry-run": "pnpm --filter @sovereign/desktop-tauri run restart:dry-run",
+    "restart:portable": "pnpm --filter @sovereign/desktop-tauri run restart:portable",
+    "restart:portable:dry-run": "pnpm --filter @sovereign/desktop-tauri run restart:portable:dry-run",
+    "install:restart-shortcut": "pnpm --filter @sovereign/desktop-tauri run install:restart-shortcut",
+    "dev:desktop": "pnpm --filter @sovereign/desktop-tauri run dev",
+    "start:legacy-electron": "pnpm --filter @sovereign/desktop run start",
+    "start:gateway": "node apps/gateway/dist/index.js",
+    "make:windows": "pnpm --filter @sovereign/desktop-tauri run make",
+    "make:legacy-electron": "pnpm --filter @sovereign/desktop run make",
+    "benchmark:desktop": "pnpm --filter @sovereign/desktop-tauri run benchmark:compare",
+    "worktrees:audit": "node scripts/worktrees.mjs audit",
+    "worktrees:guard": "node scripts/worktrees.mjs guard",
+    "worktrees:prune": "node scripts/worktrees.mjs prune",
+    "worktrees:prune:all-clean": "node scripts/worktrees.mjs prune --all-clean",
+    "worktree:create": "node scripts/worktrees.mjs create",
+    "worktree:finish": "node scripts/worktrees.mjs finish",
+    "verify:push": "pnpm test:products && pnpm test:launchers && pnpm typecheck && pnpm exec vitest run packages apps --reporter=dot && node scripts/source-structure-audit.mjs --root . --check",
+    "audit:source-structure": "node scripts/source-structure-audit.mjs --root . --check",
+    "performance:lifecycle:check": "node scripts/performance-lifecycle-budget.mjs",
+    "products:zh": "node scripts/products.mjs --lang zh-CN",
+    "products:open:zh": "node scripts/products.mjs --open --lang zh-CN"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.0.10",
+    "typescript": "^5.9.2",
+    "vitest": "4.1.11"
+  },
+  "license": "Apache-2.0"
+}

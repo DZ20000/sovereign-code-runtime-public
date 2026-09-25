@@ -1,0 +1,13 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/control-plane-contract" },
+    { "path": "packages/control-plane" },
+    { "path": "packages/runtime-core" },
+    { "path": "packages/windows-adapter" },
+    { "path": "packages/toolkit" },
+    { "path": "packages/update-core" },
+    { "path": "apps/gateway" },
+    { "path": "apps/runtime-host" }
+  ]
+}

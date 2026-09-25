@@ -1,0 +1,81 @@
+/*
+ * Status and action told apart by form.
+ *
+ * Colour alone cannot separate them here: one chromatic state colour is a
+ * deliberate choice of the palette, so "Connected" and "Open connection" are
+ * the same blue. What made them indistinguishable was shape — status wore the
+ * button's border, padding and radius, while real controls were flat text.
+ *
+ * Status keeps its colour and gives up the box: a dot and a word, the pattern
+ * the Active work carousel already uses. Action keeps the box and gains the
+ * pointer and the hover response that say it can be pressed.
+ */
+
+/*
+ * A status word is not a control, so it stops borrowing the control's shape.
+ * Plain class specificity here on purpose: the per-state rules that paint the
+ * border and background are classes too, and this layer loads after them.
+ */
+.run-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.run-state::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: var(--ui-radius-pill);
+  /* currentColor keeps the dot on whatever the state rules already decided. */
+  background: currentColor;
+  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 12%, transparent);
+}
+
+/* Anything that responds to a press says so under the cursor. */
+:where(button, a[href], [role="button"], summary, label.agent-routing-toggle):not(:disabled) {
+  cursor: pointer;
+}
+
+:where(button, a[href], [role="button"]):disabled {
+  cursor: default;
+}
+
+/*
+ * The Home summary tiles are whole buttons whose only hint was a muted word.
+ * A border that answers the cursor makes the tile read as pressable without
+ * adding another colour.
+ */
+:where(.home-summary-card) {
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+:where(button.home-summary-card:hover) {
+  border-color: color-mix(in srgb, var(--ui-accent) 46%, var(--ui-panel-divider));
+}
+
+:where(button.home-summary-card:hover) i {
+  color: var(--ui-accent);
+}
+
+/* A timestamp broken across lines reads as two values instead of one. */
+.run-row time,
+.run-detail-meta time {
+  white-space: nowrap;
+}
+
+/*
+ * The palette keeps one chromatic state colour on purpose, so "running" and
+ * "succeeded" share a hue. Form carries the difference the colour cannot:
+ * work still in flight is an open ring, a settled outcome is filled.
+ */
+.run-state-running::before,
+.run-state-queued::before {
+  background: none;
+  box-shadow: inset 0 0 0 2px currentColor;
+}

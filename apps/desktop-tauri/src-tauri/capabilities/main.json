@@ -1,0 +1,25 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-webview",
+  "description": "Minimal permissions for the Sovereign main workbench.",
+  "windows": ["main"],
+  "permissions": [
+    "allow-ui-ready",
+    "allow-control-call",
+    "allow-renderer-update-status",
+    "allow-runtime-candidate-update-status",
+    "allow-install-runtime-candidate-update",
+    "allow-activate-runtime-candidate-update",
+    "allow-renderer-update-install",
+    "allow-renderer-update-preflight",
+    "allow-renderer-update-activate",
+    "allow-renderer-update-rollback",
+    "allow-renderer-update-take-handoff",
+    "allow-resource-snapshot",
+    "allow-host-startup-state",
+    "allow-host-startup-set",
+    "allow-copy-connection-bundle",
+    "core:event:allow-listen",
+    "core:webview:allow-set-webview-zoom"
+  ]
+}

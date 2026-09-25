@@ -1,0 +1,16 @@
+* text=auto eol=lf
+/open-products.cmd text eol=crlf
+/restart-sovereign.cmd text eol=crlf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.exe binary
+*.zip binary
+*.sqlite binary
+
+# Preserve upstream license evidence bytes and their recorded SHA-256 values.
+/licenses/third-party/*.txt -text
+/licenses/gradle-wrapper-LICENSE.txt -text

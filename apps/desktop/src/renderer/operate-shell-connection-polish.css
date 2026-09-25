@@ -1,0 +1,361 @@
+/* Operate status bar: safe edges, semantic local icon and neutral permission text. */
+html .statusbar {
+  padding-inline: 12px !important;
+}
+
+html .statusbar > :first-child {
+  min-width: 0;
+  padding-left: 8px !important;
+}
+
+html .statusbar .statusbar-local {
+  color: var(--ui-text-muted);
+}
+
+html .statusbar .statusbar-local-icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.35;
+}
+
+html .statusbar .statusbar-permission {
+  border-color: transparent !important;
+  background: transparent !important;
+  color: var(--ui-text-muted) !important;
+}
+
+html .statusbar .statusbar-permission :is(.statusbar-label, strong, svg) {
+  color: inherit !important;
+}
+
+html .statusbar .statusbar-permission:hover {
+  border-color: transparent !important;
+  background: rgba(148, 163, 184, 0.055) !important;
+  color: var(--ui-text) !important;
+}
+
+html .statusbar .statusbar-permission #status-authority.status-error {
+  color: var(--ui-alert-strong) !important;
+}
+
+/* Operate connection view: two status summaries, one permission group and one advanced fold. */
+html #view-agent .agent-workbench {
+  gap: 10px;
+}
+
+html #view-agent .agent-status-strip-compact {
+  display: grid;
+  min-height: 34px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 18px;
+  padding: var(--ui-space-1) 0;
+  border: 0;
+  border-bottom: 1px solid var(--ui-border-subtle);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html #view-agent .agent-status-strip-compact .agent-status-item {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+html #view-agent .agent-status-strip-compact .agent-status-item > span {
+  color: var(--ui-text-dim);
+  font-size: 10.5px;
+}
+
+html #view-agent .agent-status-strip-compact .agent-status-item > strong {
+  min-width: 0;
+  overflow: visible;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  font-weight: 560;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+html #view-agent :is(.agent-authority-section, .agent-connect-section) {
+  margin-top: 0;
+  padding: 14px 0 18px;
+  border: 0;
+  border-bottom: 1px solid var(--ui-border-subtle);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html #view-agent .agent-connect-section {
+  border-bottom: 0;
+}
+
+html #view-agent :is(.agent-authority-heading h2, .agent-section-heading h2) {
+  font-size: 14px;
+  font-weight: 620;
+}
+
+html
+  #view-agent
+  :is(.agent-authority-heading span, .agent-section-heading span) {
+  margin-top: 3px;
+  font-size: 10.5px;
+}
+
+html #view-agent .agent-authority-intro {
+  max-width: none;
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+html #view-agent .agent-section-heading {
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 10px;
+}
+
+html #view-agent .agent-connect-actions {
+  gap: 6px;
+}
+
+html #view-agent .agent-connect-actions .button {
+  min-height: 30px;
+  padding-inline: 10px;
+}
+
+html #view-agent .agent-field-grid-primary {
+  align-items: start;
+  gap: 10px;
+}
+
+html #view-agent .agent-field {
+  min-width: 0;
+  padding: 6px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+html #view-agent .agent-field > span {
+  font-size: 10.5px;
+  font-weight: 580;
+  line-height: 1.35;
+}
+
+html #view-agent .agent-input-action {
+  align-items: center;
+  gap: 6px;
+}
+
+html #view-agent :is(.agent-input, .inline-field-button) {
+  min-height: 30px;
+}
+
+html #view-agent .field-security-note {
+  margin-top: 6px;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+html #view-agent .agent-inline-action-row {
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+html #view-agent .agent-inline-note {
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+html #view-agent .agent-connection-advanced {
+  margin-top: 10px;
+  overflow: visible;
+  border: 0;
+  border-top: 1px solid var(--ui-border-subtle);
+  background: transparent;
+}
+
+html #view-agent .agent-connection-advanced > summary {
+  min-height: 38px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  font-size: 11.5px;
+  font-weight: 580;
+}
+
+html #view-agent :is(.agent-connection-advanced-body, .agent-advanced-content) {
+  gap: 10px;
+  padding: 8px 12px 2px;
+}
+
+html #view-agent .agent-routing-panel {
+  margin: 0;
+  padding: 10px 0 0;
+  border: 0;
+  border-top: 1px solid var(--ui-border-subtle);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html #view-agent .agent-routing-toggle {
+  padding: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--ui-border-subtle);
+  border-radius: 0;
+  background: transparent;
+}
+
+html #view-agent .agent-advanced-row {
+  min-width: 0;
+  padding: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--ui-border-subtle);
+  background: transparent;
+}
+
+html #view-agent .agent-local-connection-options {
+  display: grid;
+  gap: 10px;
+  margin-top: 2px;
+  padding-top: 2px;
+  border-top: 1px solid var(--ui-border-subtle);
+}
+
+@media (max-width: 900px) {
+  html #view-agent .agent-field-grid-primary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  html #view-agent .agent-status-strip-compact,
+  html #view-agent .agent-field-grid-primary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  html #view-agent .agent-section-heading {
+    align-items: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html #view-agent .agent-connection-advanced > summary::after {
+    transition: none;
+  }
+}
+/* Operate shell navigation: keep selection local to its rail and icon. */
+html .sidebar .navigation-item,
+html .sidebar .navigation-item.is-nested {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+html
+  .sidebar
+  .navigation-item:not(.is-active):not([aria-current="page"]):hover {
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+html .sidebar .navigation-item:is(.active, .is-active, [aria-current="page"]),
+html
+  .sidebar
+  .navigation-item.is-nested:is(.active, .is-active, [aria-current="page"]) {
+  border-color: transparent;
+  background: transparent;
+  color: #e8edf5;
+  box-shadow: none;
+}
+
+html
+  .sidebar
+  .navigation-item:is(.active, .is-active, [aria-current="page"])::before {
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 2px;
+  border-radius: var(--ui-radius-pill);
+  background: var(--ui-accent);
+  box-shadow: none;
+}
+
+html
+  .sidebar
+  .navigation-item:is(.active, .is-active, [aria-current="page"])
+  .navigation-icon {
+  color: var(--ui-accent);
+}
+
+/* Route strip: every configured control-plane route, visible without opening
+   the advanced fold. Status carries colour; nothing here is clickable, so
+   nothing here is accent-blue. */
+
+html #view-agent .agent-route-strip {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+html #view-agent .agent-route-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface-raised);
+}
+
+html #view-agent .agent-route-row.is-active {
+  border-color: var(--ui-accent);
+}
+
+html #view-agent .agent-route-target {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html #view-agent .agent-route-status {
+  color: var(--ui-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+html #view-agent .agent-route-row[data-route-status="ready"] .agent-route-status {
+  color: var(--ui-success);
+}
+
+html #view-agent .agent-route-row[data-route-status="failed"] .agent-route-status {
+  color: var(--ui-danger);
+}
+
+html #view-agent .agent-route-row[data-route-status="cooling-down"] .agent-route-status,
+html #view-agent .agent-route-row[data-route-status="probing"] .agent-route-status {
+  color: var(--ui-warning);
+}

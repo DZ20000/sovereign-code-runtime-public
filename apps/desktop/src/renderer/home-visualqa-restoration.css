@@ -1,0 +1,887 @@
+/*
+ * Restores the last installed homepage/shell layout that passed visual QA.
+ *
+ * This file intentionally loads after ui-refinement.css and task-board.css so
+ * the later compact-shell experiment cannot override the verified homepage.
+ */
+
+/* Screenshot QA correction: remove the orphan shell row, join the sidebar and
+   runtime footer on one rail, and restore a deliberate home hierarchy. */
+html .application-shell {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+html .sidebar {
+  padding-bottom: 0;
+}
+
+html .navigation {
+  padding-bottom: 0;
+}
+
+html .navigation-spacer {
+  min-height: 8px;
+}
+
+html .navigation-utility-section {
+  position: relative;
+  box-sizing: border-box;
+  min-height: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  align-content: center;
+  margin: 0 -9px !important;
+  padding: 0 9px !important;
+  border-top: 1px solid var(--ui-border-subtle) !important;
+}
+
+html .navigation-utility-section .navigation-item {
+  min-height: 35px;
+  height: 35px;
+  margin: 0;
+  padding-block: 0;
+  border-radius: 0;
+}
+
+html .sidebar .brand-text strong {
+  color: var(--ui-text);
+}
+
+html .sidebar .brand-text small,
+html .sidebar .navigation-group-toggle > span {
+  color: var(--ui-text-dim);
+}
+
+html .sidebar .navigation-item:not(.is-active) .navigation-label {
+  color: #9aa4b2;
+}
+
+html .sidebar .navigation-item.is-active .navigation-label {
+  color: #f7f9fc;
+}
+
+html .main-surface {
+  min-height: 0;
+  grid-template-rows: 58px minmax(0, 1fr) 36px;
+}
+
+html .statusbar {
+  box-sizing: border-box;
+  height: 36px;
+  min-height: 36px;
+  align-items: center;
+  padding: 0 8px;
+  border-top: 1px solid var(--ui-border-subtle);
+}
+
+html .statusbar :is(.statusbar-item, .statusbar-action) {
+  box-sizing: border-box;
+  display: inline-flex;
+  height: 35px !important;
+  min-height: 35px !important;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin: 0 !important;
+  padding: 0 10px !important;
+  border: 0;
+  border-right: 1px solid var(--ui-border-subtle);
+  border-radius: 0 !important;
+  background: transparent;
+  font-size: 12px;
+  line-height: 1;
+  appearance: none;
+}
+
+html .statusbar .statusbar-icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  align-self: center;
+  margin: 0;
+  transform: none;
+}
+
+html .statusbar :is(strong, .statusbar-value, .statusbar-count) {
+  display: block;
+  height: 16px;
+  min-height: 16px;
+  margin: 0;
+  padding: 0;
+  line-height: 16px;
+  vertical-align: top;
+}
+
+html .statusbar .statusbar-count {
+  margin-left: -2px;
+  font-size: 11px;
+}
+
+html #view-overview .overview-full-content,
+html #view-overview .home-command-grid {
+  gap: 14px;
+}
+
+html #view-overview .home-summary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 0;
+  row-gap: 12px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+html #view-overview .home-summary-card:not(.home-active-work-card) {
+  min-height: 76px;
+  padding: 11px 14px;
+  border: 1px solid var(--ui-panel-divider);
+  border-radius: 0;
+  background: var(--ui-panel);
+}
+
+html #view-overview .home-summary-card:nth-child(1) {
+  border-radius: var(--ui-radius-control) 0 0 10px;
+}
+
+html #view-overview .home-summary-card:nth-child(2) {
+  border-left: 0;
+  border-radius: 0;
+}
+
+html #view-overview .home-summary-card:nth-child(4) {
+  border-right: 1px solid var(--ui-panel-divider);
+  border-left: 0;
+  border-radius: 0 10px 10px 0;
+}
+
+html #view-overview .home-summary-card:not(.home-active-work-card) > i {
+  color: var(--ui-text-dim);
+  font-style: normal;
+  font-weight: 560;
+}
+
+html #view-overview .home-summary-card:not(.home-active-work-card):hover > i {
+  color: var(--ui-state);
+}
+
+html #view-overview .home-active-work-card {
+  min-height: 238px;
+  grid-template-rows: 30px minmax(0, 1fr);
+  padding: 12px 14px 14px;
+  border: 1px solid var(--ui-panel-divider);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-panel);
+}
+
+html #view-overview .home-active-work-card > .visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  border: 0 !important;
+  white-space: nowrap !important;
+}
+
+html #view-overview .home-active-work-open {
+  color: var(--ui-text-muted);
+}
+
+html #view-overview .home-active-work-open:hover {
+  color: var(--ui-state);
+}
+
+html #view-overview .active-work-carousel,
+html #view-overview .active-work-empty {
+  min-height: 184px;
+}
+
+html
+  #view-overview
+  :is(.active-work-offset-minus-1, .active-work-offset-plus-1) {
+  --active-work-scale: 0.94;
+  --active-work-opacity: 0.34;
+}
+
+html
+  #view-overview
+  :is(.active-work-offset-minus-2, .active-work-offset-plus-2) {
+  --active-work-scale: 0.87;
+  --active-work-opacity: 0.08;
+}
+
+@media (max-width: 820px) {
+  html #view-overview .home-summary-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  html #view-overview .home-summary-card:nth-child(1),
+  html #view-overview .home-summary-card:nth-child(2),
+  html #view-overview .home-summary-card:nth-child(4) {
+    border: 1px solid var(--ui-panel-divider);
+    border-radius: var(--ui-radius-control);
+  }
+
+  html #view-overview .home-active-work-card {
+    min-height: 228px;
+  }
+
+  html #view-overview .active-work-carousel,
+  html #view-overview .active-work-empty {
+    min-height: 174px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html .view.is-active {
+    animation: none !important;
+  }
+
+  html #view-overview .active-work-line,
+  html #view-overview .home-summary-card:not(.home-active-work-card) {
+    transition: none;
+  }
+}
+
+/* Installed-window visual QA v2: one compact workbench grid, no orphan footer
+   strip, and a clear hierarchy of host command, active work, then context. */
+:root {
+  --ui-sidebar-width: 196px;
+  --ui-content-gutter: clamp(16px, 1.8vw, 24px);
+}
+
+html,
+body,
+#app,
+html .application-shell {
+  min-height: 0;
+  height: 100%;
+}
+
+html .application-shell {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+html .sidebar {
+  width: auto;
+  min-width: 0;
+  height: 100%;
+  padding: 8px 8px 0;
+}
+
+html .sidebar-header {
+  min-height: 44px;
+  padding: 6px 4px 8px 6px;
+}
+
+html .navigation {
+  min-height: 0;
+  padding: 3px 0 0;
+}
+
+html .navigation-item,
+html .navigation-item.is-nested {
+  min-height: 34px;
+  height: 34px;
+  padding-block: 0;
+}
+
+html .navigation-section + .navigation-section {
+  margin-top: 7px;
+  padding-block: 7px 6px;
+}
+
+html .navigation-spacer {
+  min-height: 6px;
+}
+
+html .navigation-utility-section {
+  box-sizing: border-box;
+  min-height: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  align-content: center;
+  margin: 0 -8px !important;
+  padding: 0 8px !important;
+  border-top: 1px solid var(--ui-border-subtle) !important;
+}
+
+html .navigation-utility-section .navigation-item {
+  min-height: 31px;
+  height: 31px;
+  margin: 0;
+  padding-inline: 10px;
+  border-radius: 0;
+}
+
+html .main-surface {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  grid-template-rows: 48px minmax(0, 1fr);
+  padding-bottom: 32px;
+}
+
+html .topbar {
+  min-height: 48px;
+  height: 48px;
+  /* The title lines up with the view content below it. */
+  padding-inline: var(--ui-page-gutter);
+}
+
+html .topbar h1 {
+  font-size: 15px;
+}
+
+html .topbar-title-group p {
+  margin-top: 1px;
+  font-size: 10px;
+}
+
+html .content-scroll {
+  min-height: 0;
+  padding: 14px 18px 14px;
+  scroll-padding-top: 14px;
+}
+
+html .view.is-active {
+  animation: ui-view-enter 160ms cubic-bezier(0.2, 0, 0, 1) both !important;
+}
+
+html .statusbar {
+  position: absolute;
+  z-index: 5;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  box-sizing: border-box;
+  display: flex;
+  height: 32px;
+  min-height: 32px;
+  align-items: stretch;
+  gap: 0;
+  overflow: hidden;
+  padding: 0 6px;
+  border-top: 1px solid var(--ui-border-subtle);
+}
+
+html .statusbar :is(.statusbar-item, .statusbar-action),
+html .statusbar .statusbar-permission {
+  box-sizing: border-box;
+  display: inline-flex;
+  height: 31px !important;
+  min-height: 31px !important;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
+  margin: 0 !important;
+  padding: 0 9px !important;
+  border: 0;
+  border-right: 1px solid var(--ui-border-subtle);
+  border-radius: 0 !important;
+  background: transparent;
+  font-size: 11px;
+  line-height: 1;
+  appearance: none;
+}
+
+html .statusbar .statusbar-icon {
+  display: block;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+  align-self: center;
+  margin: 0;
+}
+
+html .statusbar :is(strong, .statusbar-value, .statusbar-count) {
+  display: inline-flex;
+  height: 15px;
+  min-height: 15px;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  font-size: 11px;
+  line-height: 15px;
+}
+
+html .statusbar .statusbar-count {
+  margin-left: -1px;
+  color: var(--ui-text-dim);
+  font-size: 10px;
+}
+
+html #view-overview .overview-full-content,
+html #view-overview .home-command-grid {
+  gap: 10px;
+}
+
+html #view-overview .home-hero {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 2px 2px 11px;
+  border: 0;
+  border-bottom: 1px solid var(--ui-border-subtle);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html #view-overview .home-hero-copy {
+  display: grid;
+  min-width: 0;
+  max-width: none;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  column-gap: 9px;
+  row-gap: 1px;
+}
+
+html #view-overview .home-status-badge {
+  min-height: 0;
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: start;
+  gap: 5px;
+  margin-top: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+html #view-overview .home-status-badge::before {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+}
+
+html #view-overview .home-hero h2 {
+  min-width: 0;
+  grid-column: 2;
+  margin: 0;
+  overflow: hidden;
+  font-size: clamp(17px, 1.55vw, 20px);
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html #view-overview .home-hero p {
+  min-width: 0;
+  grid-column: 2;
+  margin: 0;
+  overflow: hidden;
+  font-size: 11.5px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html #view-overview .home-workspace-line {
+  display: flex;
+  padding-block: var(--ui-space-1);
+  min-width: 0;
+  grid-column: 1 / -1;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 5px;
+  padding-top: 6px;
+  border-top: 1px solid
+    color-mix(in srgb, var(--ui-border-subtle) 68%, transparent);
+}
+
+html #view-overview .home-workspace-line > span {
+  flex: 0 0 auto;
+  font-size: 10px;
+}
+
+html #view-overview .home-workspace-line strong {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html #view-overview .home-hero-actions {
+  display: flex;
+  width: auto;
+  max-width: none;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+}
+
+html #view-overview .home-hero-actions .state-text {
+  width: auto;
+  flex: 0 0 auto;
+  order: 0;
+  margin: 0 4px 0 0;
+  font-size: 10.5px;
+  text-align: right;
+}
+
+html #view-overview .home-hero-actions :is(.button, .icon-button) {
+  min-height: 30px;
+  height: 30px;
+}
+
+html #view-overview .home-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: auto auto;
+  column-gap: 0;
+  row-gap: 10px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+html #view-overview .home-active-work-card {
+  order: 1;
+  min-height: 182px;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: 26px minmax(0, 1fr);
+  gap: 4px 12px;
+  padding: 9px 11px 11px;
+  border: 1px solid var(--ui-panel-divider);
+  border-radius: var(--ui-radius-control);
+  background: color-mix(in srgb, var(--ui-panel) 76%, transparent);
+}
+
+html #view-overview .home-summary-card:nth-child(1) {
+  order: 2;
+  grid-column: 1;
+  grid-row: 2;
+  border-radius: var(--ui-radius-control) 0 0 8px;
+}
+
+html #view-overview .home-summary-card:nth-child(2) {
+  order: 3;
+  grid-column: 2;
+  grid-row: 2;
+  border-left: 0;
+  border-radius: 0;
+}
+
+html #view-overview .home-summary-card:nth-child(4) {
+  order: 4;
+  grid-column: 3;
+  grid-row: 2;
+  border-right: 1px solid var(--ui-panel-divider);
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+}
+
+html #view-overview .home-summary-card:not(.home-active-work-card) {
+  display: grid;
+  min-height: 60px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto;
+  align-content: center;
+  gap: 0 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--ui-panel-divider);
+  background: transparent;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+
+html #view-overview .home-summary-card:not(.home-active-work-card):hover {
+  background: color-mix(in srgb, var(--ui-surface-hover) 66%, transparent);
+}
+
+html #view-overview .home-summary-card:not(.home-active-work-card) > span,
+html #view-overview .home-summary-card:not(.home-active-work-card) > strong,
+html #view-overview .home-summary-card:not(.home-active-work-card) > small {
+  min-width: 0;
+  grid-column: 1;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html #view-overview .home-summary-card:not(.home-active-work-card) > span {
+  font-size: 9.5px;
+  line-height: 1.15;
+}
+
+html #view-overview .home-summary-card:not(.home-active-work-card) > strong {
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+html #view-overview .home-summary-card:not(.home-active-work-card) > small {
+  color: var(--ui-text-dim);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+html #view-overview .home-summary-card:not(.home-active-work-card) > i {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  align-self: center;
+  margin: 0;
+  padding: 0;
+  color: var(--ui-text-dim);
+  font-size: 0;
+  font-style: normal;
+}
+
+html #view-overview .home-summary-card:not(.home-active-work-card) > i::after {
+  content: "›";
+  font-size: 17px;
+  line-height: 1;
+}
+
+html #view-overview .home-summary-card:not(.home-active-work-card):hover > i {
+  color: var(--ui-state);
+}
+
+html #view-overview .home-active-work-heading {
+  align-items: center;
+}
+
+html #view-overview .home-active-work-heading > span {
+  font-size: 12px;
+}
+
+html #view-overview .home-active-work-heading > small {
+  font-size: 10px;
+}
+
+html #view-overview .home-active-work-open {
+  min-height: 26px;
+  height: 26px;
+  padding-inline: 7px;
+  font-size: 10.5px;
+}
+
+html #view-overview .active-work-carousel,
+html #view-overview .active-work-empty {
+  min-height: 132px;
+}
+
+html #view-overview .active-work-carousel {
+  border-radius: var(--ui-radius-control);
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 7%,
+    #000 93%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 7%,
+    #000 93%,
+    transparent 100%
+  );
+}
+
+html #view-overview .active-work-line {
+  width: min(820px, calc(100% - 28px));
+  min-height: 54px;
+  grid-template-columns: 3px minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 7px 11px;
+  border-radius: var(--ui-radius-control);
+  transition:
+    opacity 170ms ease,
+    transform 220ms cubic-bezier(0.2, 0, 0, 1),
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease;
+}
+
+html #view-overview .active-work-line-marker {
+  width: 3px;
+  height: 26px;
+}
+
+html #view-overview .active-work-line-title {
+  font-size: 12.5px;
+}
+
+html #view-overview .active-work-line.is-focused .active-work-line-title {
+  font-size: 14px;
+}
+
+html #view-overview .active-work-line-state {
+  font-size: 10px;
+}
+
+html #view-overview .active-work-offset-minus-2 {
+  --active-work-shift: -78px;
+}
+html #view-overview .active-work-offset-minus-1 {
+  --active-work-shift: -43px;
+}
+html #view-overview .active-work-offset-plus-1 {
+  --active-work-shift: 43px;
+}
+html #view-overview .active-work-offset-plus-2 {
+  --active-work-shift: 78px;
+}
+
+html
+  #view-overview
+  :is(.active-work-offset-minus-1, .active-work-offset-plus-1) {
+  --active-work-scale: 0.95;
+  --active-work-opacity: 0.28;
+}
+
+html
+  #view-overview
+  :is(.active-work-offset-minus-2, .active-work-offset-plus-2) {
+  --active-work-scale: 0.9;
+  --active-work-opacity: 0.05;
+}
+
+@media (max-width: 1050px) {
+  :root {
+    --ui-sidebar-width: 184px;
+  }
+
+  html #view-overview .home-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  html #view-overview .home-hero-actions {
+    justify-content: flex-start;
+  }
+
+  html #view-overview .home-hero-actions .state-text {
+    margin-right: auto;
+    text-align: left;
+  }
+}
+
+@media (max-width: 820px) {
+  html #view-overview .home-summary-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    gap: 7px;
+  }
+
+  html #view-overview .home-active-work-card,
+  html #view-overview .home-summary-card:nth-child(1),
+  html #view-overview .home-summary-card:nth-child(2),
+  html #view-overview .home-summary-card:nth-child(4) {
+    grid-column: 1;
+    grid-row: auto;
+    border: 1px solid var(--ui-panel-divider);
+    border-radius: var(--ui-radius-control);
+  }
+
+  html #view-overview .home-active-work-card {
+    min-height: 176px;
+  }
+
+  html #view-overview .active-work-carousel,
+  html #view-overview .active-work-empty {
+    min-height: 126px;
+  }
+}
+
+@media (max-width: 680px) {
+  :root {
+    --ui-sidebar-width: var(--ui-sidebar-collapsed-width);
+  }
+
+  html #view-overview .home-hero-copy {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  html #view-overview .home-status-badge,
+  html #view-overview .home-hero h2,
+  html #view-overview .home-hero p,
+  html #view-overview .home-workspace-line {
+    grid-column: 1;
+  }
+
+  html #view-overview .home-status-badge {
+    grid-row: auto;
+    margin: 0 0 2px;
+  }
+
+  html #view-overview .home-hero h2,
+  html #view-overview .home-hero p {
+    white-space: normal;
+  }
+
+  html #view-overview .home-hero-actions {
+    flex-wrap: wrap;
+  }
+
+  html #view-overview .home-hero-actions .state-text {
+    width: 100%;
+    flex-basis: 100%;
+  }
+
+  html #view-overview .active-work-line {
+    width: calc(100% - 12px);
+    grid-template-columns: 3px minmax(0, 1fr);
+    gap: 8px;
+    padding: 7px 9px;
+  }
+
+  html #view-overview .active-work-line-state {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html .view.is-active {
+    animation: none !important;
+  }
+
+  html #view-overview .active-work-line,
+  html #view-overview .home-summary-card:not(.home-active-work-card) {
+    transition: none;
+  }
+}
+
+/* Current status content is denser than the visual-QA fixture. Keep its compact
+ * footer rail without allowing workspace and network labels to escape at the
+ * supported narrow desktop viewport. */
+@media (max-width: 1120px) {
+  html .statusbar > .statusbar-workspace {
+    min-width: 0 !important;
+    max-width: min(260px, 34vw);
+    flex: 1 1 180px !important;
+    overflow: hidden;
+  }
+
+  html .statusbar > .statusbar-workspace :is(strong, .statusbar-value) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  html .statusbar > .statusbar-local {
+    display: none !important;
+  }
+}

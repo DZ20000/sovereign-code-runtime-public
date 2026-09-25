@@ -1,0 +1,27 @@
+{
+  "name": "@sovereign/runtime-host",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty false",
+    "bundle": "vite build --config vite.config.ts",
+    "smoke:run": "node scripts/smoke.mjs && node scripts/smoke-shell.mjs && node scripts/smoke-tasks.mjs && node scripts/smoke-cutover.mjs",
+    "smoke": "pnpm bundle && pnpm smoke:run",
+    "smoke:tasks": "node scripts/smoke-tasks.mjs",
+    "smoke:cutover": "node scripts/smoke-cutover.mjs"
+  },
+  "dependencies": {
+    "@sovereign/control-plane": "workspace:*",
+    "@sovereign/control-plane-contract": "workspace:*",
+    "@sovereign/runtime-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.10",
+    "typescript": "^5.9.2",
+    "vite": "^8.1.0"
+  },
+  "license": "Apache-2.0"
+}

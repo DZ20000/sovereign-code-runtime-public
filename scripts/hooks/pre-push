@@ -1,0 +1,16 @@
+#!/bin/sh
+# Run the shared fast gate before code leaves the machine. The full suite
+# (integration, visual, Rust, packaging) remains an explicit command.
+#
+# Set SCR_SKIP_HOOKS=1 to bypass when pushing a known-broken spike.
+set -e
+
+if [ -n "$SCR_SKIP_HOOKS" ]; then
+  echo "pre-push: skipped (SCR_SKIP_HOOKS)"
+  exit 0
+fi
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+exec pnpm verify:push

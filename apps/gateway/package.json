@@ -1,0 +1,32 @@
+{
+  "name": "@sovereign/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime.d.ts",
+      "import": "./dist/runtime.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty false",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@sovereign/runtime-core": "workspace:*",
+    "@sovereign/toolkit": "workspace:*",
+    "@sovereign/windows-adapter": "workspace:*",
+    "express": "^5.1.0",
+    "zod": "^3.25.76"
+  },
+  "license": "Apache-2.0"
+}

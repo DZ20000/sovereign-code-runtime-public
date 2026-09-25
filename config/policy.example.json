@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "note": "Reference policy material for future file-backed configuration. Milestone 0 loads equivalent values from environment variables.",
+  "principal": {
+    "id": "local-owner",
+    "workspaceIds": ["default"],
+    "capabilities": [
+      "system.read",
+      "workspace.read",
+      "files.read",
+      "files.write",
+      "files.destructive",
+      "search.read",
+      "git.read",
+      "git.write",
+      "python.run",
+      "runs.read",
+      "runs.cancel",
+      "validation.run",
+      "terminal.run"
+    ]
+  },
+  "workspace": {
+    "id": "default",
+    "root": "C:\\Projects\\sovereign-code-runtime"
+  },
+  "gateway": {
+    "host": "127.0.0.1",
+    "port": 3210,
+    "allowedHosts": ["127.0.0.1:3210", "localhost:3210", "[::1]:3210"],
+    "allowedOrigins": [
+      "http://127.0.0.1:3210",
+      "http://localhost:3210",
+      "http://[::1]:3210"
+    ]
+  }
+}
