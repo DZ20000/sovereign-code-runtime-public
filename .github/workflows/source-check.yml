@@ -43,7 +43,8 @@ jobs:
         run: pnpm exec vitest run --maxWorkers=4 --reporter=dot --exclude tests/integration/desktop-tunnel-routing.test.ts --exclude tests/integration/task-registry-capacity.test.ts
       - name: Run Windows timing-sensitive integration tests serially
         run: pnpm exec vitest run tests/integration/desktop-tunnel-routing.test.ts tests/integration/task-registry-capacity.test.ts --maxWorkers=1 --no-file-parallelism --reporter=dot
-      - run: pnpm --filter @sovereign/desktop-tauri run prepare:runtime
+      - name: Run Tauri Rust and recovery tests
+        run: pnpm --filter @sovereign/desktop-tauri run test:rust
       - run: pnpm --filter @sovereign/desktop-tauri run build:web
       - run: pnpm audit --prod
       - name: Verify checks did not modify source
@@ -66,3 +67,23 @@ jobs:
       - run: npm install --global pnpm@10.15.1
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm audit
+
+  android-source:
+    # Android uses Linux-like filesystem semantics. Run JVM unit tests on Linux so
+    # fail-closed path checks are not distorted by Windows path aliasing/casing.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Verify Java and Android SDK
+        shell: bash
+        run: |
+          java -version
+          test -n "${ANDROID_HOME:-}"
+      - name: Run Android unit tests
+        shell: bash
+        run: |
+          chmod +x apps/android-agent/gradlew
+          ./apps/android-agent/gradlew -p apps/android-agent testDebugUnitTest --no-daemon

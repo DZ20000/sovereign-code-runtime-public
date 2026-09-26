@@ -2,9 +2,15 @@
 
 [English](README.md)
 
+[![Windows source checks](https://github.com/DZ20000/sovereign-code-runtime-public/actions/workflows/source-check.yml/badge.svg)](https://github.com/DZ20000/sovereign-code-runtime-public/actions/workflows/source-check.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+![Status: Source Preview](https://img.shields.io/badge/status-source%20preview-orange)
+
 > **源码预览。** 本仓库发布的是源码，不是已宣布的二进制发行版，也不是安装态验收证明。在敏感环境中使用前，请阅读[安全政策](SECURITY.md)、[威胁模型](docs/threat-model.md)和[依赖安全说明](docs/dependency-security.md)。
 
-Sovereign 让 **ChatGPT Web 对话通过 MCP 操作经授权的 Windows 工作区**。ChatGPT 提供模型与对话；Sovereign 提供本机工具、工作区权限、任务状态和审计证据。项目不内置模型客户端。
+Sovereign 让 **MCP 客户端操作经授权的 Windows 工作区**。它提供本机工具、工作区权限、任务状态和审计证据；项目不内置模型客户端。
+
+ChatGPT Web 是下文说明的一种受支持连接方式。**Sovereign Code Runtime 是独立开源项目，与 OpenAI 不存在隶属、背书或赞助关系。** OpenAI 与 ChatGPT 是其各自权利人的商标。
 
 ## 主要能力
 
@@ -13,6 +19,28 @@ Sovereign 让 **ChatGPT Web 对话通过 MCP 操作经授权的 Windows 工作�
 - 四级本机权限、后果性操作原生批准和本地审计回执。
 - Tauri/WebView2 桌面外壳、Node Runtime Host，以及可选的 Android 预览 Agent。
 - 面向干净 Windows 克隆的源码与依赖检查。
+
+## 架构
+
+```mermaid
+flowchart LR
+    Client["MCP 客户端"]
+    Tunnel["安全 MCP 隧道 / 连接器"]
+    Gateway["回环 MCP Gateway"]
+    Policy["工作区与权限策略"]
+    Tools["Windows 本机工具"]
+    Audit["任务状态与审计证据"]
+    Desktop["Tauri / WebView2 桌面端"]
+    Host["Node Runtime Host"]
+
+    Client --> Tunnel
+    Tunnel --> Gateway
+    Gateway --> Policy
+    Policy --> Tools
+    Policy --> Audit
+    Desktop --> Policy
+    Host --> Gateway
+```
 
 ## 快速开始
 
@@ -82,6 +110,8 @@ PowerShell、ConPTY、Python、浏览器求值和桌面控制都以当前 Window
 - [远程主机与恢复](docs/remote-host.md)
 - [贡献指南](CONTRIBUTING.md)
 - [安全政策](SECURITY.md)
+- [隐私与本机数据](PRIVACY.md)
+- [支持范围](SUPPORT.md)
 
 ## 发布边界
 

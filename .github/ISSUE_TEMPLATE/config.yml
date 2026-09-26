@@ -1,0 +1,6 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/DZ20000/sovereign-code-runtime-public/security/advisories/new
+    about: Report suspected security vulnerabilities privately.

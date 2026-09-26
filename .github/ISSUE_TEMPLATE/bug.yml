@@ -1,0 +1,83 @@
+name: Bug report
+description: Report a reproducible problem in Sovereign Code Runtime
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report security vulnerabilities here.
+        Use GitHub Private Vulnerability Reporting instead.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the problem concisely.
+    validations:
+      required: true
+
+  - type: input
+    id: commit
+    attributes:
+      label: Exact commit SHA
+      placeholder: 40-character Git commit SHA
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2
+    validations:
+      required: true
+
+  - type: input
+    id: toolchain
+    attributes:
+      label: Node.js and pnpm versions
+      placeholder: "Node 24.x; pnpm 10.x"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Use synthetic or disposable data.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: |
+        Redact tokens, tunnel keys, cookies, personal paths,
+        workspace contents, and other credentials.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: I have removed credentials and private workspace data.
+          required: true
+        - label: This is not a security vulnerability report.
+          required: true

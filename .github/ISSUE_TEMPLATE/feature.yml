@@ -1,0 +1,44 @@
+name: Feature request
+description: Propose an improvement to Sovereign Code Runtime
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What operator or developer problem should this solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+
+  - type: dropdown
+    id: security
+    attributes:
+      label: Security or permission impact
+      options:
+        - None expected
+        - Changes read-only behavior
+        - Changes workspace writes
+        - Changes native approvals
+        - Changes process/terminal/browser/desktop execution
+        - Unsure
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
