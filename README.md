@@ -2,9 +2,17 @@
 
 [简体中文](README.zh-CN.md)
 
+[![Windows source checks](https://github.com/DZ20000/sovereign-code-runtime-public/actions/workflows/source-check.yml/badge.svg)](https://github.com/DZ20000/sovereign-code-runtime-public/actions/workflows/source-check.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+![Status: Source Preview](https://img.shields.io/badge/status-source%20preview-orange)
+
 > **Source preview.** This repository publishes source code, not an announced binary release or proof of an installed system. Read [Security](SECURITY.md), the [threat model](docs/threat-model.md), and [dependency security](docs/dependency-security.md) before using it with sensitive data.
 
-Sovereign lets a **ChatGPT Web conversation operate an authorized Windows workspace through MCP**. ChatGPT supplies the model and conversation; Sovereign supplies local tools, workspace permissions, task state, and audit evidence. It does not include a built-in model client.
+Sovereign lets an **MCP client operate an authorized Windows workspace**. It supplies local tools, workspace permissions, task state, and audit evidence; it does not include a built-in model client.
+
+ChatGPT Web is one supported connection path described below. **Sovereign Code Runtime is an independent open-source project and is not affiliated with, endorsed by, or sponsored by OpenAI.** OpenAI and ChatGPT are trademarks of their respective owner.
+
+This is an independent open-source project, not an official OpenAI product.
 
 ## Highlights
 
@@ -13,6 +21,28 @@ Sovereign lets a **ChatGPT Web conversation operate an authorized Windows worksp
 - Four local permission profiles, native approval for consequential actions, and local audit receipts.
 - Tauri/WebView2 desktop shell, Node Runtime Host, and an optional Android preview agent.
 - Source and dependency checks designed for a clean Windows clone.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Client["MCP Client"]
+    Tunnel["Secure MCP Tunnel / Connector"]
+    Gateway["Loopback MCP Gateway"]
+    Policy["Workspace & Permission Policy"]
+    Tools["Local Windows Tools"]
+    Audit["Task State & Audit Evidence"]
+    Desktop["Tauri / WebView2 Desktop"]
+    Host["Node Runtime Host"]
+
+    Client --> Tunnel
+    Tunnel --> Gateway
+    Gateway --> Policy
+    Policy --> Tools
+    Policy --> Audit
+    Desktop --> Policy
+    Host --> Gateway
+```
 
 ## Quick start
 
@@ -84,6 +114,8 @@ Sovereign **has no notification milestones, content-hash deduplication, or per-d
 - [Remote host and recovery](docs/remote-host.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
+- [Privacy and local data](PRIVACY.md)
+- [Support](SUPPORT.md)
 
 ## Release boundaries
 

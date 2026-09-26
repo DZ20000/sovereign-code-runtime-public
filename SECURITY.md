@@ -4,11 +4,31 @@
 
 This is a source preview, not a security-certified or deployment-approved release. There is no promised support window, security SLA, trusted binary feed, or enabled automatic update service. Review the [threat model](docs/threat-model.md) and [dependency review](docs/dependency-security.md) before using it on a machine containing sensitive data.
 
+## Supported versions
+
+Sovereign Code Runtime is currently published as a source preview. There is no announced binary release, long-term support branch, or security SLA.
+
+Security fixes are evaluated against the current public `main` branch unless a repository advisory explicitly states otherwise.
+
 ## Reporting a vulnerability
 
-This snapshot does not publish a security mailbox and does not assert that GitHub private vulnerability reporting is enabled. Before public release, the repository owner must configure and verify a private reporting route. Use only a contact independently verified with the maintainer. When no private route is available, post only a request for one, not exploit details, access credentials, screenshots, or personal workspace data. Do not invent an address based on a project name.
+Please do not report suspected security vulnerabilities through public Issues, Discussions, pull requests, or public reproduction repositories.
 
-A private report should identify the exact source commit, affected component, operating system and dependency versions, required permission level, expected versus actual behavior, and a minimal reproduction using disposable data. Redact Bearer tokens, tunnel runtime keys, DPAPI material, signing keys, cookies, personal paths, and database contents. Coordinate disclosure before publishing sensitive reproduction details.
+Use [GitHub Private Vulnerability Reporting](https://github.com/DZ20000/sovereign-code-runtime-public/security/advisories/new).
+
+Include, when applicable:
+
+- the exact affected commit SHA;
+- the affected component and operating system;
+- Node.js, pnpm, and relevant dependency versions;
+- the Sovereign permission profile required to reproduce the issue;
+- expected versus observed behavior;
+- a minimal reproduction using disposable or synthetic data; and
+- an assessment of security impact.
+
+Do not include live Bearer tokens, tunnel runtime keys, cookies, signing keys, DPAPI-protected material, personal workspace paths, database contents, or other credentials.
+
+Please coordinate disclosure through the private report before publishing exploit details or a working reproduction. This source preview does not promise a response or remediation SLA.
 
 ## Operational boundaries
 
