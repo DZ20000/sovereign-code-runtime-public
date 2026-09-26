@@ -69,16 +69,18 @@ jobs:
       - run: pnpm audit
 
   android-source:
-    runs-on: windows-latest
+    # Android uses Linux-like filesystem semantics. Run JVM unit tests on Linux so
+    # fail-closed path checks are not distorted by Windows path aliasing/casing.
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
       - name: Verify Java and Android SDK
-        shell: pwsh
+        shell: bash
         run: |
           java -version
-          if ([string]::IsNullOrWhiteSpace($env:ANDROID_HOME)) { throw 'ANDROID_HOME is not configured on the runner.' }
+          test -n "${ANDROID_HOME:-}"
       - name: Run Android unit tests
-        run: apps\\android-agent\\gradlew.bat -p apps/android-agent testDebugUnitTest --no-daemon
+        run: ./apps/android-agent/gradlew -p apps/android-agent testDebugUnitTest --no-daemon
