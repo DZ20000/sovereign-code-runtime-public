@@ -10,9 +10,7 @@
 
 Sovereign lets an **MCP client operate an authorized Windows workspace**. It supplies local tools, workspace permissions, task state, and audit evidence; it does not include a built-in model client.
 
-ChatGPT Web is one supported connection path described below. **Sovereign Code Runtime is an independent open-source project and is not affiliated with, endorsed by, or sponsored by OpenAI.** OpenAI and ChatGPT are trademarks of their respective owner.
-
-This is an independent open-source project, not an official OpenAI product.
+ChatGPT Web is one supported connection path described below. **Sovereign Code Runtime is an independent open-source project and is not affiliated with, endorsed by, or sponsored by OpenAI.** OpenAI and ChatGPT are trademarks of their respective owners.
 
 ## Highlights
 

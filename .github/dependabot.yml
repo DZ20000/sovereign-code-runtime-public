@@ -12,6 +12,18 @@ updates:
           - minor
           - patch
 
+  - package-ecosystem: cargo
+    directory: /apps/desktop-tauri/src-tauri
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: gradle
+    directory: /apps/android-agent
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
