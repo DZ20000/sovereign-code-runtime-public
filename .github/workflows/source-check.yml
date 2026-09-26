@@ -83,4 +83,7 @@ jobs:
           java -version
           test -n "${ANDROID_HOME:-}"
       - name: Run Android unit tests
-        run: ./apps/android-agent/gradlew -p apps/android-agent testDebugUnitTest --no-daemon
+        shell: bash
+        run: |
+          chmod +x apps/android-agent/gradlew
+          ./apps/android-agent/gradlew -p apps/android-agent testDebugUnitTest --no-daemon
