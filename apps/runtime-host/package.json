@@ -19,7 +19,7 @@
     "@sovereign/runtime-core": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^24.0.10",
+    "@types/node": "^26.6.2",
     "typescript": "^5.9.2",
     "vite": "^8.1.0"
   },

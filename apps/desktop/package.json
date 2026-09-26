@@ -40,7 +40,7 @@
     "@sovereign/control-plane-contract": "workspace:*",
     "@sovereign/gateway": "workspace:*",
     "@sovereign/runtime-core": "workspace:*",
-    "@types/node": "^24.0.10",
+    "@types/node": "^26.6.2",
     "codemirror": "^6.0.2",
     "electron": "43.2.0",
     "typescript": "^5.9.2",
