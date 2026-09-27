@@ -1,0 +1,31 @@
+name: Documentation issue
+description: Report missing, misleading, or hard-to-follow documentation.
+title: "[Docs]: "
+labels:
+  - documentation
+body:
+  - type: input
+    id: location
+    attributes:
+      label: Document or section
+      placeholder: README.md — Run the continuity demo
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is unclear or incorrect?
+    validations:
+      required: true
+  - type: textarea
+    id: suggested
+    attributes:
+      label: Suggested improvement
+  - type: checkboxes
+    id: claim
+    attributes:
+      label: Claim classification
+      options:
+        - label: The issue could cause readers to confuse design, source tests, packaging, installation, activation, or observed runtime behavior.
+        - label: The issue could cause readers to misunderstand an authority or security boundary.
+        - label: Neither applies.

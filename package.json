@@ -42,7 +42,7 @@
     "build:legacy-electron": "pnpm --filter @sovereign/desktop run package",
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.tests.json --noEmit --pretty false && pnpm --filter @sovereign/desktop run typecheck && pnpm --filter @sovereign/desktop-tauri run typecheck",
     "check:tauri": "pnpm --filter @sovereign/desktop-tauri run typecheck && pnpm --filter @sovereign/desktop-tauri run prepare:runtime && cargo check --manifest-path apps/desktop-tauri/src-tauri/Cargo.toml",
-    "test": "pnpm test:products && pnpm test:launchers && pnpm build:runtime && vitest run && pnpm --filter @sovereign/desktop run visual:test && pnpm --filter @sovereign/runtime-host run smoke:run && pnpm --filter @sovereign/desktop-tauri run test:rust && pnpm --filter @sovereign/desktop-tauri run smoke:guardian",
+    "test": "pnpm test:products && pnpm test:launchers && pnpm build:runtime && node --disable-warning=ExperimentalWarning --test scripts/demo-continuity.test.mjs && vitest run && pnpm --filter @sovereign/desktop run visual:test && pnpm --filter @sovereign/runtime-host run smoke:run && pnpm --filter @sovereign/desktop-tauri run test:rust && pnpm --filter @sovereign/desktop-tauri run smoke:guardian",
     "test:task-panel:focused": "node scripts/task-panel-test-gate.mjs",
     "test:visual": "pnpm --filter @sovereign/desktop run visual:test",
     "test:tauri": "pnpm check:tauri && pnpm --filter @sovereign/desktop-tauri run test:rust && pnpm --filter @sovereign/desktop-tauri run smoke:restart-launcher && pnpm --filter @sovereign/desktop-tauri run smoke:portable && pnpm --filter @sovereign/desktop-tauri run smoke:guardian:packaged",
@@ -69,7 +69,9 @@
     "audit:source-structure": "node scripts/source-structure-audit.mjs --root . --check",
     "performance:lifecycle:check": "node scripts/performance-lifecycle-budget.mjs",
     "products:zh": "node scripts/products.mjs --lang zh-CN",
-    "products:open:zh": "node scripts/products.mjs --open --lang zh-CN"
+    "products:open:zh": "node scripts/products.mjs --open --lang zh-CN",
+    "demo:continuity": "pnpm build:runtime && node --disable-warning=ExperimentalWarning scripts/demo-continuity.mjs",
+    "test:demo-continuity": "pnpm build:runtime && node --disable-warning=ExperimentalWarning --test scripts/demo-continuity.test.mjs"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",

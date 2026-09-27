@@ -1,6 +1,6 @@
-name: Feature request
-description: Propose an improvement to Sovereign Code Runtime
-title: "[Feature]: "
+name: Feature proposal
+description: Propose a focused capability or invariant improvement.
+title: "[Proposal]: "
 labels:
   - enhancement
 body:
@@ -8,37 +8,55 @@ body:
     id: problem
     attributes:
       label: Problem
-      description: What operator or developer problem should this solve?
+      description: Describe the concrete workflow or failure mode, not only the desired implementation.
     validations:
       required: true
-
   - type: textarea
-    id: proposal
+    id: outcome
     attributes:
-      label: Proposed behavior
+      label: Desired outcome
+      description: What should a user or Agent be able to observe after this is implemented?
     validations:
       required: true
-
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Primary layer
+      options:
+        - Durable Task and session continuity
+        - Authority, permission, approval, or audit
+        - Agent coordination
+        - Execution tool or Tool Pack
+        - Remote host, Tunnel, or recovery
+        - Renderer / Runtime update and cutover
+        - Desktop experience
+        - Documentation or contributor experience
+        - Android or another device endpoint
+    validations:
+      required: true
+  - type: textarea
+    id: fit
+    attributes:
+      label: Why this belongs in Sovereign
+      description: Explain how it supports durable work, bounded authority, or governed evolution rather than duplicating a model client or generic Agent framework.
+    validations:
+      required: true
+  - type: textarea
+    id: invariants
+    attributes:
+      label: Invariants and failure behavior
+      description: Which ownership, workspace, revision, approval, idempotency, evidence, or fencing rules must remain true? What should fail closed?
+    validations:
+      required: true
   - type: textarea
     id: alternatives
     attributes:
       label: Alternatives considered
-
-  - type: dropdown
-    id: security
+      description: Include a smaller solution, external integration, or documentation-only option when applicable.
+  - type: textarea
+    id: acceptance
     attributes:
-      label: Security or permission impact
-      options:
-        - None expected
-        - Changes read-only behavior
-        - Changes workspace writes
-        - Changes native approvals
-        - Changes process/terminal/browser/desktop execution
-        - Unsure
+      label: Acceptance evidence
+      description: Describe the deterministic test, packaged smoke, or physical-environment acceptance needed before the feature can be claimed complete.
     validations:
       required: true
-
-  - type: textarea
-    id: notes
-    attributes:
-      label: Additional context
