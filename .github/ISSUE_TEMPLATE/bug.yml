@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible problem in Sovereign Code Runtime
+description: Report reproducible incorrect behavior without exposing secrets or private data.
 title: "[Bug]: "
 labels:
   - bug
@@ -7,17 +7,31 @@ body:
   - type: markdown
     attributes:
       value: |
-        Do not report security vulnerabilities here.
-        Use GitHub Private Vulnerability Reporting instead.
-
+        Thanks for helping improve Sovereign. Do not include credentials, Tunnel keys, private Task data, signing material, or screenshots of personal desktops. Security vulnerabilities belong in the private channel described in SECURITY.md.
   - type: textarea
     id: summary
     attributes:
       label: Summary
-      description: Describe the problem concisely.
+      description: What went wrong, in one or two precise sentences?
+      placeholder: A closed Task session can still...
     validations:
       required: true
-
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Tasks, messages, or session continuity
+        - Permissions, approvals, or workspace containment
+        - Terminal, Python, browser, or desktop execution
+        - Gateway, Tunnel, proxy, or Host Guardian
+        - Renderer, Runtime Host, update, or recovery
+        - Desktop UI or accessibility
+        - Android developer preview
+        - Build, CI, documentation, or dependencies
+        - Other
+    validations:
+      required: true
   - type: input
     id: commit
     attributes:
@@ -25,7 +39,6 @@ body:
       placeholder: 40-character Git commit SHA
     validations:
       required: true
-
   - type: input
     id: windows
     attributes:
@@ -33,7 +46,6 @@ body:
       placeholder: Windows 11 24H2
     validations:
       required: true
-
   - type: input
     id: toolchain
     attributes:
@@ -41,43 +53,66 @@ body:
       placeholder: "Node 24.x; pnpm 10.x"
     validations:
       required: true
-
   - type: textarea
-    id: reproduce
+    id: reproduction
     attributes:
-      label: Reproduction steps
-      description: Use synthetic or disposable data.
+      label: Reproduction
+      description: Provide the smallest deterministic sequence, including the command or tool names used.
+      placeholder: |
+        1. Create a Task with session A...
+        2. Close session A...
+        3. Call...
     validations:
       required: true
-
   - type: textarea
     id: expected
     attributes:
-      label: Expected behavior
+      label: Expected invariant
+      description: State what authority, persistence, or user-visible rule should have remained true.
     validations:
       required: true
-
   - type: textarea
     id: actual
     attributes:
-      label: Actual behavior
+      label: Actual result and evidence
+      description: Include sanitized error codes, logs, receipts, or screenshots from synthetic data only.
     validations:
       required: true
-
   - type: textarea
-    id: logs
+    id: environment
     attributes:
-      label: Relevant logs
-      description: |
-        Redact tokens, tunnel keys, cookies, personal paths,
-        workspace contents, and other credentials.
-
+      label: Environment
+      placeholder: |
+        Commit:
+        Windows version:
+        Node / pnpm / Rust versions:
+        Source, portable, installer, or installed state:
+    validations:
+      required: true
   - type: checkboxes
-    id: checks
+    id: boundary
     attributes:
-      label: Safety checks
+      label: Boundary impact
+      description: Select every area that may be involved.
       options:
-        - label: I have removed credentials and private workspace data.
+        - label: Workspace containment or path identity
+        - label: Permission level, approval, elevation, or credential handling
+        - label: Task owner, principal, Agent identity, or session lease
+        - label: Message delivery, acknowledgement, expiry, or recipient identity
+        - label: Execution idempotency or unknown outcome
+        - label: Runtime / Renderer / Guardian / updater authority or fencing
+        - label: None of the above
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation already performed
+      description: List exact commands, exit codes, and checks that were not run.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I removed credentials, private user data, signing material, and machine-specific secrets.
           required: true
-        - label: This is not a security vulnerability report.
+        - label: This is not a security vulnerability report that should use the private SECURITY.md channel.
           required: true

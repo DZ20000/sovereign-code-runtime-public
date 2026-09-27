@@ -1,49 +1,64 @@
 ## Summary
 
-Describe the change and why it is needed.
+Describe the behavior change and why it belongs in Sovereign.
 
-## Security and permission impact
+## Boundary review
 
-Describe any effect on:
+Check every affected area and explain the invariant below.
 
-- workspace containment;
-- permission profiles or native approvals;
-- terminal, Python, browser, or desktop execution;
-- credentials or persisted settings;
-- audit evidence or task state.
+- [ ] Workspace containment or path identity
+- [ ] Permission level, native approval, elevation, or credentials
+- [ ] Task ownership, principal, Agent identity, or session lease
+- [ ] Message delivery, acknowledgement, expiry, or recipient identity
+- [ ] Execution idempotency or unknown outcomes
+- [ ] Gateway, Tunnel, proxy, or Guardian recovery
+- [ ] Renderer, Runtime Host, updater, checkpoint, or fencing authority
+- [ ] Persistence or compatibility schema
+- [ ] None of the above
 
-Write "None expected" if none apply.
+Invariant and failure behavior:
+
+<!-- What must remain true? What must fail closed? -->
 
 ## Validation
 
-Exact tested commit:
-
-~~~text
-<commit SHA>
-~~~
+Exact commit tested:
 
 Environment:
 
-~~~text
+```text
 Windows:
 Node.js:
 pnpm:
 Rust (if applicable):
 Android/JDK (if applicable):
-~~~
+```
 
-Commands run:
+Commands and exit codes:
 
-~~~text
-<commands and exit status>
-~~~
+```text
 
-## Checklist
+```
 
-- [ ] The change is narrowly scoped.
-- [ ] I did not include credentials, personal workspace data, or machine-specific state.
-- [ ] Relevant tests pass on this exact revision.
-- [ ] New or changed behavior has appropriate tests.
-- [ ] Dependency changes include the updated lockfile and required notices.
-- [ ] Documentation was updated when user-visible behavior changed.
-- [ ] Security-sensitive details were reported privately when appropriate.
+- [ ] Added or updated deterministic tests for changed behavior
+- [ ] Reran affected checks after the final source change
+- [ ] Recorded skipped or unavailable checks
+- [ ] Used synthetic fixtures and removed private data and credentials
+- [ ] Updated the lockfile and third-party notices for dependency changes
+- [ ] Updated documentation for user-visible behavior changes
+- [ ] Reported security-sensitive details privately when appropriate
+
+## Evidence level
+
+- [ ] Source/type/unit/integration checks only
+- [ ] Packaged candidate verified
+- [ ] Installed candidate verified
+- [ ] Candidate activated
+- [ ] Running behavior observed in the target environment
+- [ ] Physical desktop, network, UAC, or device acceptance performed
+
+Do not select a stronger evidence level than the work actually established.
+
+## Compatibility and limitations
+
+Describe migration, protocol, operating-system, or backward-compatibility implications and any remaining limitations.
