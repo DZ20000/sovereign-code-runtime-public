@@ -39,10 +39,12 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test:products
       - run: pnpm test:launchers
-      - name: Run parallel Vitest suite
-        run: pnpm exec vitest run --maxWorkers=4 --reporter=dot --exclude tests/integration/desktop-tunnel-routing.test.ts --exclude tests/integration/task-registry-capacity.test.ts
+      - name: Run Vitest suite
+        run: pnpm exec vitest run --reporter=dot --exclude tests/integration/desktop-tunnel-routing.test.ts --exclude tests/integration/task-registry-capacity.test.ts
       - name: Run Windows timing-sensitive integration tests serially
         run: pnpm exec vitest run tests/integration/desktop-tunnel-routing.test.ts tests/integration/task-registry-capacity.test.ts --maxWorkers=1 --no-file-parallelism --reporter=dot
+      - name: Prepare embedded runtime
+        run: pnpm --filter @sovereign/desktop-tauri run prepare:runtime
       - name: Run Tauri Rust and recovery tests
         run: pnpm --filter @sovereign/desktop-tauri run test:rust
       - run: pnpm --filter @sovereign/desktop-tauri run build:web
