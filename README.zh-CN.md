@@ -140,7 +140,7 @@ pnpm products:open:zh
 | L3 Consequential | L1/L2 直接执行；有后果的调用需要新的原生审批。 |
 | L4 Bypass | 经本地明确确认后，声明的工具不再弹出 SO 审批窗口。 |
 
-记忆权限绑定工作区。L4 不授予管理员权限，也不会移除 schema、containment、revision、身份检查或审计。
+记忆权限绑定精确工作区。工作区恢复是独立设置：启用或关闭它都不会改变当前 L1–L4 权限。L4 不授予管理员权限，也不会移除 schema、containment、revision、身份检查或审计。
 
 权威还具有“新鲜度”：
 
@@ -167,6 +167,10 @@ client.catalog_status
 当前能力族包括工作区与 Git、受管 Terminal/Python Runs、浏览器、revision-bound Windows 桌面控制、Workflows、Tasks、Agent coordination、增量上下文、可选 semantic-code 和可选 secure execution。
 
 详见 [能力目录](docs/capability-catalog.md)、[Tool Packs](docs/tool-packs.md)、[Task and Agent Hub](docs/task-agent-hub.md) 和 [Agent 协调](docs/task-coordination.md)。
+
+## 通知策略
+
+Sovereign 不使用通知里程碑、内容哈希去重或按域/滚动窗口的通知桶。通知只表达有意义的工作节点、完成状态或需要操作员关注的情况；普通的非 Workflow 成功运行不要求自动通知。
 
 ## 安全边界
 

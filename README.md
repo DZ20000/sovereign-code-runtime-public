@@ -140,7 +140,7 @@ For local build inventory and verification rules, see [releases/README.md](relea
 | L3 Consequential | L1/L2 directly; consequential calls require fresh native approval. |
 | L4 Bypass | Declared tools without Sovereign approval prompts after explicit local confirmation. |
 
-Remembered permissions are workspace-bound. L4 does not grant administrator elevation and does not remove schemas, containment, revision checks, identity checks, or audit.
+Remembered permissions are bound to the exact workspace. Workspace restore is a separate setting: **enabling or disabling it never changes the active L1-L4 permission**. L4 does not grant administrator elevation and does not remove schemas, containment, revision checks, identity checks, or audit.
 
 Authority also has a freshness dimension:
 
@@ -167,6 +167,10 @@ client.catalog_status
 Current capability families include workspace and Git operations, managed Terminal and Python runs, browser automation, revision-bound Windows desktop control, workflows, Tasks, Agent coordination, context retrieval, optional semantic-code tools, and optional secure execution.
 
 Read [capability discovery](docs/capability-catalog.md), [tool packs](docs/tool-packs.md), [Task and Agent Hub](docs/task-agent-hub.md), and [Agent coordination](docs/task-coordination.md) for the exact contracts.
+
+## Notifications
+
+Sovereign **has no notification milestones, content-hash deduplication, or per-domain/rolling notification buckets**. Notifications are semantic signals for meaningful work, completion, or operator attention; routine successful non-workflow runs do not require an automatic notification.
 
 ## Security boundaries
 
