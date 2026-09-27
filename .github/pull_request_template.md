@@ -28,6 +28,8 @@ Environment:
 Windows:
 Node.js:
 pnpm:
+Rust (if applicable):
+Android/JDK (if applicable):
 ~~~
 
 Commands run:
