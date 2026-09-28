@@ -238,7 +238,7 @@ describe("task registry capacity", () => {
   }, 60_000);
 
   it("preserves a monotonic message sequence when global pruning reaches an old task", async () => {
-    const { workspace, registry } = await fixture();
+    const { workspace, registry, databasePath } = await fixture();
     const anchor = registry.createTask(
       { title: "Old anchor task" },
       "chatgpt-web",
@@ -255,8 +255,21 @@ describe("task registry capacity", () => {
         workspace,
       ),
     );
+    // Prepare 1,994 assistant messages plus five creation messages: 1,999.
+    // Six real API appends below bring all four busy Tasks to their bounds
+    // and execute the global pruning that removes the old anchor's history.
+    // This is a sequence-correctness test, not a 2,000-commit throughput test.
+    const seededCounts = [499, 499, 499, 497] as const;
+    seedAssistantHistory(databasePath, busyTasks.map((task, index) => ({
+      taskId: task.id, taskNumber: index + 1, count: seededCounts[index]!,
+    })));
+    const observer = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      expect(observer.prepare("SELECT COUNT(*) AS count FROM task_messages").get())
+        .toMatchObject({ count: 1999 });
+    } finally { observer.close(); }
     for (const [taskIndex, task] of busyTasks.entries()) {
-      for (let messageIndex = 0; messageIndex < 500; messageIndex += 1) {
+      for (let messageIndex = seededCounts[taskIndex]!; messageIndex < 500; messageIndex += 1) {
         registry.addAgentMessage(
           task.id,
           `Busy ${taskIndex + 1}-${messageIndex + 1}`,
@@ -266,6 +279,10 @@ describe("task registry capacity", () => {
           "chatgpt-web",
         );
       }
+    }
+    for (const task of busyTasks) {
+      expect(registry.detail(task.id, 500).messages).toHaveLength(500);
+      expect(registry.detail(task.id, 500).messages.at(-1)?.sequence).toBe(501);
     }
     const before = registry.detail(anchor.id, 10);
     expect(before.messages).toEqual([]);
@@ -278,6 +295,17 @@ describe("task registry capacity", () => {
     });
     expect(after.task.unreadUserMessageCount).toBe(1);
     registry.close();
+    const reopened = new TaskRegistry({ databasePath });
+    try {
+      const persisted = reopened.detail(anchor.id, 10);
+      expect(persisted.messages).toHaveLength(1);
+      expect(persisted.messages[0]).toMatchObject({
+        sequence: 2, role: "user", content: "Anchor follow-up", acknowledgedAt: null,
+      });
+      expect(persisted.task.unreadUserMessageCount).toBe(1);
+      const next = reopened.addUserMessage(anchor.id, "Anchor after reopen");
+      expect(next.messages.at(-1)).toMatchObject({ sequence: 3, content: "Anchor after reopen" });
+    } finally { reopened.close(); }
   }, 60_000);
 
   it("does not leave empty projects behind when task validation or global bounds fail", async () => {
