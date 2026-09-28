@@ -31,6 +31,7 @@ import { discoverPythonRuntime, type PythonRuntimeSpec } from "./python-runtime.
 import { ManagedRunManager } from "./run-manager.js";
 import { BoundedOutputBuffer, outputRetention, runOutputRange, type OutputRetention } from "./output-buffer.js";
 import { validationProcess } from "./validation-process.js";
+import { writeAllAtStart } from "./write-complete.js";
 import { sanitizedChildEnvironment } from "./process-environment.js";
 import {
   followRunSnapshot,
@@ -887,9 +888,7 @@ export class WindowsAdapter {
             actualSha256: beforeSha256,
           });
         }
-        if (nextData.byteLength > 0) {
-          await handle.write(nextData, 0, nextData.byteLength, 0);
-        }
+        await writeAllAtStart(handle, nextData);
         await handle.truncate(nextData.byteLength);
         await handle.sync();
       } finally {
@@ -962,7 +961,7 @@ export class WindowsAdapter {
     const nextContent =
       occurrence === "all"
         ? current.content.split(findText).join(replacementText)
-        : current.content.replace(findText, replacementText);
+        : current.content.replace(findText, () => replacementText);
     const result = await this.replaceTextFile(
       principal,
       workspaceId,
