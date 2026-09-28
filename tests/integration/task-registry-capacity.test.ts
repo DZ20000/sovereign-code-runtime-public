@@ -1,4 +1,7 @@
 import { mkdir } from "node:fs/promises";
+import { DatabaseSync } from "node:sqlite";
+import { TaskRegistry } from "../../packages/control-plane/src/task-registry.js";
+import { seedAssistantHistory } from "./task-history-seed-fixture.js";
 
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -179,7 +182,7 @@ describe("task registry capacity", () => {
   });
 
   it("bounds total retained conversation messages across all tasks", async () => {
-    const { workspace, registry } = await fixture();
+    const { workspace, registry, databasePath } = await fixture();
     const tasks = Array.from({ length: 5 }, (_, index) =>
       registry.createTask(
         {
@@ -191,29 +194,47 @@ describe("task registry capacity", () => {
         workspace,
       ),
     );
-    for (const [taskIndex, task] of tasks.entries()) {
-      for (let messageIndex = 0; messageIndex < 450; messageIndex += 1) {
-        registry.addAgentMessage(
-          task.id,
-          `Task ${taskIndex + 1} message ${messageIndex + 1}`,
-          "assistant",
-          `agent-${taskIndex + 1}`,
-          `Agent ${taskIndex + 1}`,
-          "chatgpt-web",
+    // Five creation messages + 1,994 synthetic assistant messages = 1,999.
+    // Setup stays below both limits; every boundary crossing below is a real,
+    // separately committed API call. Sustained-append timing is a separate check.
+    seedAssistantHistory(databasePath, tasks.map((task, index) => ({
+      taskId: task.id, taskNumber: index + 1, count: index < 4 ? 450 : 194,
+    })));
+    const observer = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      const storedCount = observer.prepare("SELECT COUNT(*) AS count FROM task_messages");
+      const storedMessage = observer.prepare("SELECT content FROM task_messages WHERE task_id = ? AND sequence = ?");
+      expect(storedCount.get()).toMatchObject({ count: 1999 });
+      for (let messageIndex = 194; messageIndex < 450; messageIndex += 1) {
+        const result = registry.addAgentMessage(
+          tasks[4]!.id, `Task 5 message ${messageIndex + 1}`,
+          "assistant", "agent-5", "Agent 5", "chatgpt-web",
         );
+        expect(result.messages.at(-1)).toMatchObject({
+          sequence: messageIndex + 2, content: `Task 5 message ${messageIndex + 1}`,
+        });
+        // A second connection must see each committed result, not an open batch.
+        expect(storedCount.get()).toMatchObject({ count: 2000 });
+        expect(storedMessage.get(tasks[4]!.id, messageIndex + 2)).toMatchObject({ content: `Task 5 message ${messageIndex + 1}` });
       }
-    }
+    } finally { observer.close(); }
     const snapshot = registry.snapshot();
     const total = snapshot.projects
       .flatMap((project) => project.tasks)
       .reduce((count, task) => count + task.messageCount, 0);
     expect(total).toBe(2_000);
-    expect(
-      registry.detail(tasks.at(-1)!.id, 500).messages.at(-1),
-    ).toMatchObject({
+    expect(registry.detail(tasks.at(-1)!.id, 500).messages.at(-1)).toMatchObject({
       content: "Task 5 message 450",
     });
     registry.close();
+    const reopened = new TaskRegistry({ databasePath });
+    try {
+      expect(reopened.snapshot().projects.flatMap((project) => project.tasks)
+        .reduce((count, task) => count + task.messageCount, 0)).toBe(2000);
+      expect(reopened.detail(tasks[4]!.id, 500).messages.at(-1)).toMatchObject({
+        sequence: 451, content: "Task 5 message 450",
+      });
+    } finally { reopened.close(); }
   }, 60_000);
 
   it("preserves a monotonic message sequence when global pruning reaches an old task", async () => {
