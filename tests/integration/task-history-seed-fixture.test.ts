@@ -50,16 +50,23 @@ describe("pre-boundary Task history fixture", () => {
     expect(registry.detail(tasks[0]!.id).messages).toHaveLength(2);
   });
 
-  it("rolls back rows and sequence changes when an insert fails partway", async () => {
-    const { databasePath, registry, tasks } = await ready(1);
+  it("rolls back earlier Task sequences and counters when a later batch fails", async () => {
+    const { databasePath, registry, tasks } = await ready(2);
     const injector = new DatabaseSync(databasePath);
     try {
       injector.exec(`CREATE TRIGGER fail_seed BEFORE INSERT ON task_messages
-        WHEN NEW.content = 'Task 1 message 2' BEGIN SELECT RAISE(ABORT, 'Synthetic seed failure'); END;`);
-      expect(() => seedAssistantHistory(databasePath, [{ taskId: tasks[0]!.id, taskNumber: 1, count: 3 }])).toThrow(/Synthetic seed failure/);
-      expect(registry.detail(tasks[0]!.id).messages).toHaveLength(1);
-      expect(injector.prepare("SELECT message_count FROM task_message_retention_totals_v1 WHERE key = 'all'").get()).toMatchObject({ message_count: 1 });
-      expect(injector.prepare("SELECT next_message_sequence FROM tasks WHERE id = ?").get(tasks[0]!.id)).toMatchObject({ next_message_sequence: 2 });
+        WHEN NEW.content = 'Task 2 message 2' BEGIN SELECT RAISE(ABORT, 'Synthetic seed failure'); END;`);
+      expect(() => seedAssistantHistory(databasePath, [
+        { taskId: tasks[0]!.id, taskNumber: 1, count: 1 },
+        { taskId: tasks[1]!.id, taskNumber: 2, count: 3 },
+      ])).toThrow(/Synthetic seed failure/);
+      for (const task of tasks) {
+        expect(registry.detail(task.id).messages).toHaveLength(1);
+        expect(injector.prepare("SELECT next_message_sequence FROM tasks WHERE id = ?").get(task.id))
+          .toMatchObject({ next_message_sequence: 2 });
+      }
+      expect(injector.prepare("SELECT message_count FROM task_message_retention_totals_v1 WHERE key = 'all'").get())
+        .toMatchObject({ message_count: 2 });
     } finally { injector.close(); }
   });
 });
