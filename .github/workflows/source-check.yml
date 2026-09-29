@@ -37,6 +37,8 @@ jobs:
       - name: Verify canonical Windows temporary directory
         run: node --input-type=module -e "import { realpathSync } from 'node:fs'; const actual = realpathSync.native(process.env.TEMP); if (actual.toLowerCase() !== process.env.TEMP.toLowerCase() || process.env.TMP.toLowerCase() !== actual.toLowerCase()) process.exit(1);"
       - run: pnpm typecheck
+      - name: Build native Windows agent
+        run: pnpm --filter @sovereign/desktop run build:native
       - run: pnpm test:demo-continuity
       - run: pnpm test:products
       - run: pnpm test:launchers

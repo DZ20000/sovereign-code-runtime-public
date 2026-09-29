@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -17,6 +17,14 @@ import { NativeNotificationManager, WindowsAdapter } from "../src/index.js";
 
 const cleanupPaths: string[] = [];
 const execFileAsync = promisify(execFile);
+const nativeAgentPath = join(
+  process.cwd(),
+  "apps",
+  "desktop",
+  "native",
+  "bin",
+  "SovereignNativeAgent.exe",
+);
 
 afterEach(async () => {
   await Promise.all(
@@ -31,6 +39,7 @@ afterEach(async () => {
 
 async function createFixture(
   notificationManager?: NativeNotificationManager,
+  maxReadBytes?: number,
 ): Promise<{
   root: string;
   audit: MemoryAuditStore;
@@ -45,7 +54,9 @@ async function createFixture(
     workspaces: [{ id: "workspace", root }],
     policy,
     audit,
+    nativeAgentPath,
     ...(notificationManager === undefined ? {} : { notificationManager }),
+    ...(maxReadBytes === undefined ? {} : { maxReadBytes }),
   });
   return { root, audit, adapter };
 }
@@ -237,6 +248,22 @@ describe("Windows path containment and file primitives", () => {
       "files.delete",
       "files.move",
     ]);
+  });
+
+  it("keeps oversized files intact when move and delete exceed the guarded-read limit", async () => {
+    const { root, adapter } = await createFixture(undefined, 4);
+    const source = join(root, "safe", "oversized.txt");
+    await writeFile(source, "12345", { flag: "wx" });
+
+    await expect(
+      adapter.moveFile(owner, "workspace", "safe\\oversized.txt", "safe\\moved.txt", "5994471abb01112afcc18159f6cc74b4f511b99806da59c173c52f0dc009c7ee"),
+    ).rejects.toMatchObject({ code: "FILE_TOO_LARGE" });
+    await expect(
+      adapter.deleteFile(owner, "workspace", "safe\\oversized.txt", "5994471abb01112afcc18159f6cc74b4f511b99806da59c173c52f0dc009c7ee"),
+    ).rejects.toMatchObject({ code: "FILE_TOO_LARGE" });
+
+    expect(await readFile(source, "utf8")).toBe("12345");
+    expect(existsSync(join(root, "safe", "moved.txt"))).toBe(false);
   });
 
   it("rejects a stale hash and records the failed write", async () => {

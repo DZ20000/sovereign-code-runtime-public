@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
-import { lstat, mkdir, open, readdir, realpath, rename, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, realpath } from "node:fs/promises";
 import { arch, platform, release } from "node:os";
 import { win32 } from "node:path";
 
@@ -32,6 +32,7 @@ import { ManagedRunManager } from "./run-manager.js";
 import { BoundedOutputBuffer, outputRetention, runOutputRange, type OutputRetention } from "./output-buffer.js";
 import { validationProcess } from "./validation-process.js";
 import { writeAllAtStart } from "./write-complete.js";
+import { NativeFileOperations } from "./native-file-operations.js";
 import { sanitizedChildEnvironment } from "./process-environment.js";
 import {
   followRunSnapshot,
@@ -59,6 +60,7 @@ export * from "./browser-manager.js";
 export * from "./computer-manager.js";
 export * from "./conpty-manager.js";
 export * from "./notification-manager.js";
+export * from "./native-file-operations.js";
 export * from "./run-completion-notifier.js";
 export * from "./run-follow.js";
 export * from "./workspace-context.js";
@@ -188,6 +190,7 @@ export interface WindowsAdapterOptions {
   readonly runStore?: RunStore;
   readonly nativeAgentPath?: string;
   readonly notificationManager?: NativeNotificationManager;
+  readonly fileOperations?: NativeFileOperations;
   readonly runCompletionNotifierOptions?: RunCompletionNotifierOptions;
   readonly maxReadBytes?: number;
   readonly maxWriteBytes?: number;
@@ -413,6 +416,7 @@ export class WindowsAdapter {
   readonly #browser: ManagedBrowserManager;
   readonly #computer: NativeComputerManager;
   readonly #notifications: NativeNotificationManager;
+  readonly #fileOperations: NativeFileOperations;
   readonly #runCompletionNotifier: RunCompletionNotifier;
   #pythonRuntimePromise: Promise<PythonRuntimeSpec | null> | undefined;
 
@@ -425,6 +429,7 @@ export class WindowsAdapter {
     this.#maxProcessOutputBytes = options.maxProcessOutputBytes ?? 1_048_576;
     this.#notifications =
       options.notificationManager ?? new NativeNotificationManager(options.nativeAgentPath);
+    this.#fileOperations = options.fileOperations ?? new NativeFileOperations(options.nativeAgentPath);
     this.#runCompletionNotifier = new RunCompletionNotifier(
       this.#notifications,
       this.#audit,
@@ -760,20 +765,15 @@ export class WindowsAdapter {
       if (data.byteLength > this.#maxWriteBytes) {
         throw new RuntimeError("FILE_TOO_LARGE", "The new file exceeds the configured write limit.", 413);
       }
-      const resolved = await this.#guard(workspaceId).resolve(relativePath, "create");
+      const guard = this.#guard(workspaceId);
+      const resolved = await guard.resolve(relativePath, "create");
       normalizedPath = resolved.relativePath;
-      const handle = await open(resolved.absolutePath, "wx");
-      try {
-        // Opening may create an empty file if an authorized directory is raced
-        // into a junction. Content is written only after the opened handle is
-        // proven to be the single-link file at the contained canonical path.
-        await this.#guard(workspaceId).assertOpenedRegularFile(resolved.absolutePath, handle);
-        await handle.writeFile(data);
-        await handle.sync();
-      } finally {
-        await handle.close();
-      }
-      const afterSha256 = sha256(data);
+      const result = await this.#fileOperations.create(
+        await guard.realRoot(),
+        resolved.absolutePath,
+        data,
+        this.#maxWriteBytes,
+      );
       this.#appendWriteReceipt({
         id: receiptId,
         principal,
@@ -783,14 +783,14 @@ export class WindowsAdapter {
         workspaceId,
         requestedPath: relativePath,
         relativePath: resolved.relativePath,
-        afterSha256,
-        details: { bytes: data.byteLength },
+        afterSha256: result.sha256,
+        details: { bytes: result.bytes },
       });
       return {
         workspaceId,
         relativePath: resolved.relativePath,
-        bytes: data.byteLength,
-        sha256: afterSha256,
+        bytes: result.bytes,
+        sha256: result.sha256,
         receiptId,
       };
     } catch (error) {
@@ -995,32 +995,19 @@ export class WindowsAdapter {
     try {
       this.#require(principal, workspaceId, ["files.write"]);
       assertSha256(expectedSha256);
-      const source = await this.#guard(workspaceId).resolve(sourcePath, "read");
-      const destination = await this.#guard(workspaceId).resolve(destinationPath, "create");
+      const guard = this.#guard(workspaceId);
+      const source = await guard.resolve(sourcePath, "read");
+      const destination = await guard.resolve(destinationPath, "create");
       normalizedSource = source.relativePath;
       normalizedDestination = destination.relativePath;
-      const handle = await open(source.absolutePath, "r");
-      let bytes = 0;
-      try {
-        await this.#guard(workspaceId).assertOpenedRegularFile(source.absolutePath, handle);
-        const info = await handle.stat();
-        if (info.size > this.#maxReadBytes) {
-          throw new RuntimeError("FILE_TOO_LARGE", "The source exceeds the guarded-read limit.", 413);
-        }
-        const data = await handle.readFile();
-        bytes = data.byteLength;
-        beforeSha256 = sha256(data);
-        if (!equalSha256(beforeSha256, expectedSha256)) {
-          throw new RuntimeError("STALE_HASH", "The source changed after it was read.", 409, {
-            expectedSha256,
-            actualSha256: beforeSha256,
-          });
-        }
-      } finally {
-        await handle.close();
-      }
-
-      await rename(source.absolutePath, destination.absolutePath);
+      const result = await this.#fileOperations.move(
+        await guard.realRoot(),
+        source.absolutePath,
+        destination.absolutePath,
+        expectedSha256,
+        this.#maxReadBytes,
+      );
+      beforeSha256 = result.sha256;
       this.#appendWriteReceipt({
         id: receiptId,
         principal,
@@ -1035,15 +1022,15 @@ export class WindowsAdapter {
         details: {
           sourcePath: source.relativePath,
           destinationPath: destination.relativePath,
-          bytes,
+          bytes: result.bytes,
         },
       });
       return {
         workspaceId,
         sourcePath: source.relativePath,
         relativePath: destination.relativePath,
-        bytes,
-        sha256: beforeSha256,
+        bytes: result.bytes,
+        sha256: result.sha256,
         receiptId,
       };
     } catch (error) {
@@ -1082,33 +1069,19 @@ export class WindowsAdapter {
     const receiptId = randomUUID();
     let normalizedPath: string | undefined;
     let beforeSha256: string | undefined;
-    let bytes = 0;
     try {
       this.#require(principal, workspaceId, ["files.write", "files.destructive"]);
       assertSha256(expectedSha256);
-      const resolved = await this.#guard(workspaceId).resolve(relativePath, "read");
+      const guard = this.#guard(workspaceId);
+      const resolved = await guard.resolve(relativePath, "read");
       normalizedPath = resolved.relativePath;
-      const handle = await open(resolved.absolutePath, "r");
-      try {
-        await this.#guard(workspaceId).assertOpenedRegularFile(resolved.absolutePath, handle);
-        const info = await handle.stat();
-        if (info.size > this.#maxReadBytes) {
-          throw new RuntimeError("FILE_TOO_LARGE", "The file exceeds the guarded-read limit.", 413);
-        }
-        const data = await handle.readFile();
-        bytes = data.byteLength;
-        beforeSha256 = sha256(data);
-        if (!equalSha256(beforeSha256, expectedSha256)) {
-          throw new RuntimeError("STALE_HASH", "The file changed after it was read.", 409, {
-            expectedSha256,
-            actualSha256: beforeSha256,
-          });
-        }
-      } finally {
-        await handle.close();
-      }
-
-      await unlink(resolved.absolutePath);
+      const result = await this.#fileOperations.delete(
+        await guard.realRoot(),
+        resolved.absolutePath,
+        expectedSha256,
+        this.#maxReadBytes,
+      );
+      beforeSha256 = result.sha256;
       this.#appendWriteReceipt({
         id: receiptId,
         principal,
@@ -1119,13 +1092,13 @@ export class WindowsAdapter {
         requestedPath: relativePath,
         relativePath: resolved.relativePath,
         beforeSha256,
-        details: { bytes },
+        details: { bytes: result.bytes },
       });
       return {
         workspaceId,
         relativePath: resolved.relativePath,
-        bytes,
-        sha256: beforeSha256,
+        bytes: result.bytes,
+        sha256: result.sha256,
         receiptId,
       };
     } catch (error) {

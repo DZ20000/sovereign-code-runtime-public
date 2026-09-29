@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -38,6 +38,7 @@ async function fixture(options: Partial<GatewayRuntimeOptions> = {}) {
     auditPath: join(root, "audit.sqlite"),
     watchToolPacks: false,
     runCompletionNotificationsEnabled: false,
+    nativeAgentPath: resolve(process.cwd(), "apps", "desktop", "native", "bin", "SovereignNativeAgent.exe"),
     ...options,
   });
   return {

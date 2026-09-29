@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const desktopRoot = resolve(scriptDirectory, "..");
 const sourcePath = join(desktopRoot, "native", "SovereignNativeAgent.cs");
+const fileOperationsSourcePath = join(desktopRoot, "native", "SovereignFileOperations.cs");
 const outputDirectory = join(desktopRoot, "native", "bin");
 const outputPath = join(outputDirectory, "SovereignNativeAgent.exe");
 
@@ -30,6 +31,9 @@ if (compiler === undefined) {
 if (!existsSync(sourcePath)) {
   throw new Error(`Native agent source is missing: ${sourcePath}`);
 }
+if (!existsSync(fileOperationsSourcePath)) {
+  throw new Error(`Native file-operation source is missing: ${fileOperationsSourcePath}`);
+}
 
 await mkdir(outputDirectory, { recursive: true });
 const source = await readFile(sourcePath, "utf8");
@@ -47,6 +51,7 @@ const args = [
   "/reference:System.Drawing.dll",
   "/reference:System.Windows.Forms.dll",
   buildSourcePath,
+  fileOperationsSourcePath,
 ];
 
 try {
