@@ -9,8 +9,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
-
-internal static class SovereignNativeAgent
+internal static partial class SovereignNativeAgent
 {
     private const int EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
     private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
@@ -1374,6 +1373,7 @@ internal static class SovereignNativeAgent
             {
                 return RunNotify(args);
             }
+            int fileOperationResult; if (TryRunFileOperation(args, out fileOperationResult)) return fileOperationResult;
             throw new ArgumentException("Unknown native-agent mode: " + args[0]);
         }
         catch (Exception error)

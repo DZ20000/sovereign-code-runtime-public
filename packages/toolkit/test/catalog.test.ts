@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -39,6 +39,7 @@ async function createCatalog(
     workspaces: [{ id: "workspace", root }],
     policy,
     audit: new MemoryAuditStore(),
+    nativeAgentPath: resolve(process.cwd(), "apps", "desktop", "native", "bin", "SovereignNativeAgent.exe"),
   });
   return new ToolCatalog(
     [
