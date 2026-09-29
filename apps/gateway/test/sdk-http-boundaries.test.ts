@@ -6,7 +6,7 @@ const transports: WebStandardStreamableHTTPServerTransport[] = [];
 afterEach(async () => { await Promise.all(transports.splice(0).map(transport => transport.close())); });
 const headers = { "content-type": "application/json", accept: "application/json, text/event-stream" };
 function transport(maxRequestBodySize = 2048) {
-  const options = { sessionIdGenerator: undefined, maxRequestBodySize };
+  const options = { maxRequestBodySize };
   const value = new WebStandardStreamableHTTPServerTransport(options);
   transports.push(value);
   return value;
