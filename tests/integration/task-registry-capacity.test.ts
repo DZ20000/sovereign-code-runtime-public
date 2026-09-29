@@ -1,4 +1,7 @@
 import { mkdir } from "node:fs/promises";
+import { DatabaseSync } from "node:sqlite";
+import { TaskRegistry } from "../../packages/control-plane/src/task-registry.js";
+import { seedAssistantHistory } from "./task-history-seed-fixture.js";
 
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -179,7 +182,7 @@ describe("task registry capacity", () => {
   });
 
   it("bounds total retained conversation messages across all tasks", async () => {
-    const { workspace, registry } = await fixture();
+    const { workspace, registry, databasePath } = await fixture();
     const tasks = Array.from({ length: 5 }, (_, index) =>
       registry.createTask(
         {
@@ -191,33 +194,51 @@ describe("task registry capacity", () => {
         workspace,
       ),
     );
-    for (const [taskIndex, task] of tasks.entries()) {
-      for (let messageIndex = 0; messageIndex < 450; messageIndex += 1) {
-        registry.addAgentMessage(
-          task.id,
-          `Task ${taskIndex + 1} message ${messageIndex + 1}`,
-          "assistant",
-          `agent-${taskIndex + 1}`,
-          `Agent ${taskIndex + 1}`,
-          "chatgpt-web",
+    // Five creation messages + 1,994 synthetic assistant messages = 1,999.
+    // Setup stays below both limits; every boundary crossing below is a real,
+    // separately committed API call. Sustained-append timing is a separate check.
+    seedAssistantHistory(databasePath, tasks.map((task, index) => ({
+      taskId: task.id, taskNumber: index + 1, count: index < 4 ? 450 : 194,
+    })));
+    const observer = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      const storedCount = observer.prepare("SELECT COUNT(*) AS count FROM task_messages");
+      const storedMessage = observer.prepare("SELECT content FROM task_messages WHERE task_id = ? AND sequence = ?");
+      expect(storedCount.get()).toMatchObject({ count: 1999 });
+      for (let messageIndex = 194; messageIndex < 450; messageIndex += 1) {
+        const result = registry.addAgentMessage(
+          tasks[4]!.id, `Task 5 message ${messageIndex + 1}`,
+          "assistant", "agent-5", "Agent 5", "chatgpt-web",
         );
+        expect(result.messages.at(-1)).toMatchObject({
+          sequence: messageIndex + 2, content: `Task 5 message ${messageIndex + 1}`,
+        });
+        // A second connection must see each committed result, not an open batch.
+        expect(storedCount.get()).toMatchObject({ count: 2000 });
+        expect(storedMessage.get(tasks[4]!.id, messageIndex + 2)).toMatchObject({ content: `Task 5 message ${messageIndex + 1}` });
       }
-    }
+    } finally { observer.close(); }
     const snapshot = registry.snapshot();
     const total = snapshot.projects
       .flatMap((project) => project.tasks)
       .reduce((count, task) => count + task.messageCount, 0);
     expect(total).toBe(2_000);
-    expect(
-      registry.detail(tasks.at(-1)!.id, 500).messages.at(-1),
-    ).toMatchObject({
+    expect(registry.detail(tasks.at(-1)!.id, 500).messages.at(-1)).toMatchObject({
       content: "Task 5 message 450",
     });
     registry.close();
+    const reopened = new TaskRegistry({ databasePath });
+    try {
+      expect(reopened.snapshot().projects.flatMap((project) => project.tasks)
+        .reduce((count, task) => count + task.messageCount, 0)).toBe(2000);
+      expect(reopened.detail(tasks[4]!.id, 500).messages.at(-1)).toMatchObject({
+        sequence: 451, content: "Task 5 message 450",
+      });
+    } finally { reopened.close(); }
   }, 60_000);
 
   it("preserves a monotonic message sequence when global pruning reaches an old task", async () => {
-    const { workspace, registry } = await fixture();
+    const { workspace, registry, databasePath } = await fixture();
     const anchor = registry.createTask(
       { title: "Old anchor task" },
       "chatgpt-web",
@@ -234,8 +255,21 @@ describe("task registry capacity", () => {
         workspace,
       ),
     );
+    // Prepare 1,994 assistant messages plus five creation messages: 1,999.
+    // Six real API appends below bring all four busy Tasks to their bounds
+    // and execute the global pruning that removes the old anchor's history.
+    // This is a sequence-correctness test, not a 2,000-commit throughput test.
+    const seededCounts = [499, 499, 499, 497] as const;
+    seedAssistantHistory(databasePath, busyTasks.map((task, index) => ({
+      taskId: task.id, taskNumber: index + 1, count: seededCounts[index]!,
+    })));
+    const observer = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      expect(observer.prepare("SELECT COUNT(*) AS count FROM task_messages").get())
+        .toMatchObject({ count: 1999 });
+    } finally { observer.close(); }
     for (const [taskIndex, task] of busyTasks.entries()) {
-      for (let messageIndex = 0; messageIndex < 500; messageIndex += 1) {
+      for (let messageIndex = seededCounts[taskIndex]!; messageIndex < 500; messageIndex += 1) {
         registry.addAgentMessage(
           task.id,
           `Busy ${taskIndex + 1}-${messageIndex + 1}`,
@@ -245,6 +279,10 @@ describe("task registry capacity", () => {
           "chatgpt-web",
         );
       }
+    }
+    for (const task of busyTasks) {
+      expect(registry.detail(task.id, 500).messages).toHaveLength(500);
+      expect(registry.detail(task.id, 500).messages.at(-1)?.sequence).toBe(501);
     }
     const before = registry.detail(anchor.id, 10);
     expect(before.messages).toEqual([]);
@@ -257,6 +295,17 @@ describe("task registry capacity", () => {
     });
     expect(after.task.unreadUserMessageCount).toBe(1);
     registry.close();
+    const reopened = new TaskRegistry({ databasePath });
+    try {
+      const persisted = reopened.detail(anchor.id, 10);
+      expect(persisted.messages).toHaveLength(1);
+      expect(persisted.messages[0]).toMatchObject({
+        sequence: 2, role: "user", content: "Anchor follow-up", acknowledgedAt: null,
+      });
+      expect(persisted.task.unreadUserMessageCount).toBe(1);
+      const next = reopened.addUserMessage(anchor.id, "Anchor after reopen");
+      expect(next.messages.at(-1)).toMatchObject({ sequence: 3, content: "Anchor after reopen" });
+    } finally { reopened.close(); }
   }, 60_000);
 
   it("does not leave empty projects behind when task validation or global bounds fail", async () => {
