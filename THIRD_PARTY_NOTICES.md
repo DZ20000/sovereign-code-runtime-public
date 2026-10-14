@@ -4,7 +4,7 @@ The Apache-2.0 license in [LICENSE](LICENSE) applies to original Sovereign Code 
 
 ## Source dependency inventory
 
-[licenses/dependency-inventory.json](licenses/dependency-inventory.json) records package names, exact versions, declared licenses, public source locations, and available license-text evidence. It includes 531 npm package-version records from the workspace dependency metadata, 524 external Cargo records from the resolved metadata, and 162 Android `debugRuntimeClasspath` components. Maven entries without a license in their own POM are resolved through their published parent POMs where indicated.
+[licenses/dependency-inventory.json](licenses/dependency-inventory.json) records package names, exact versions, declared licenses, public source locations, and available license-text evidence. It includes 532 npm package-version records from the workspace dependency metadata, 524 external Cargo records from the resolved metadata, and 162 Android `debugRuntimeClasspath` components. Maven entries without a license in their own POM are resolved through their published parent POMs where indicated.
 
 The npm coverage is the graph reported by pnpm on the validation platform; optional lockfile resolutions omitted by that report are listed explicitly in the inventory and still need review for other target distributions. This is a source-development inventory, not a binary-release bill of materials. It includes development tools and Cargo packages for platforms other than Windows. Android build plugins, the JDK, the Android SDK, operating-system components, and separately installed optional tools are outside that runtime-classpath inventory.
 
