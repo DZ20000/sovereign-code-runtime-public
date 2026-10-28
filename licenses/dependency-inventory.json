@@ -7,7 +7,7 @@
     "apps/android-agent/gradle/libs.versions.toml"
   ],
   "summary": {
-    "npm": 531,
+    "npm": 532,
     "cargo": 524,
     "android": 162,
     "missingLicenseDeclaration": [],
@@ -13023,9 +13023,9 @@
     {
       "ecosystem": "npm",
       "name": "@codemirror/commands",
-      "version": "6.10.4",
+      "version": "6.11.1",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/@codemirror/commands/-/commands-6.10.4.tgz",
+      "source": "https://registry.npmjs.org/@codemirror/commands/-/commands-6.11.1.tgz",
       "homepage": null,
       "repository": "https://code.haverbeke.berlin/codemirror/commands",
       "licenseFiles": [
@@ -13125,9 +13125,9 @@
     {
       "ecosystem": "npm",
       "name": "@codemirror/state",
-      "version": "6.7.1",
+      "version": "6.7.6",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/@codemirror/state/-/state-6.7.1.tgz",
+      "source": "https://registry.npmjs.org/@codemirror/state/-/state-6.7.6.tgz",
       "homepage": null,
       "repository": "https://code.haverbeke.berlin/codemirror/state",
       "licenseFiles": [
@@ -13142,9 +13142,9 @@
     {
       "ecosystem": "npm",
       "name": "@codemirror/view",
-      "version": "6.43.8",
+      "version": "6.43.13",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/@codemirror/view/-/view-6.43.8.tgz",
+      "source": "https://registry.npmjs.org/@codemirror/view/-/view-6.43.13.tgz",
       "homepage": null,
       "repository": "https://code.haverbeke.berlin/codemirror/view",
       "licenseFiles": [
@@ -13974,11 +13974,11 @@
     {
       "ecosystem": "npm",
       "name": "@lezer/highlight",
-      "version": "1.2.3",
+      "version": "1.2.5",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/@lezer/highlight/-/highlight-1.2.3.tgz",
-      "homepage": "https://github.com/lezer-parser/highlight",
-      "repository": "https://github.com/lezer-parser/highlight",
+      "source": "https://registry.npmjs.org/@lezer/highlight/-/highlight-1.2.5.tgz",
+      "homepage": null,
+      "repository": "https://code.haverbeke.berlin/lezer/highlight",
       "licenseFiles": [
         {
           "name": "LICENSE",
@@ -14093,9 +14093,9 @@
     {
       "ecosystem": "npm",
       "name": "@modelcontextprotocol/sdk",
-      "version": "1.30.0",
+      "version": "1.31.0",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/@modelcontextprotocol/sdk/-/sdk-1.30.0.tgz",
+      "source": "https://registry.npmjs.org/@modelcontextprotocol/sdk/-/sdk-1.31.0.tgz",
       "homepage": "https://modelcontextprotocol.io/",
       "repository": "https://github.com/modelcontextprotocol/typescript-sdk",
       "licenseFiles": [
@@ -14161,10 +14161,10 @@
     {
       "ecosystem": "npm",
       "name": "@oxc-project/types",
-      "version": "0.143.0",
+      "version": "0.151.0",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/@oxc-project/types/-/types-0.143.0.tgz",
-      "homepage": "https://oxc.rs/",
+      "source": "https://registry.npmjs.org/@oxc-project/types/-/types-0.151.0.tgz",
+      "homepage": "https://oxc.rs",
       "repository": "https://github.com/oxc-project/oxc",
       "licenseFiles": [
         {
@@ -14178,9 +14178,9 @@
     {
       "ecosystem": "npm",
       "name": "@rolldown/binding-win32-x64-msvc",
-      "version": "1.2.3",
+      "version": "1.2.11",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/@rolldown/binding-win32-x64-msvc/-/binding-win32-x64-msvc-1.2.3.tgz",
+      "source": "https://registry.npmjs.org/@rolldown/binding-win32-x64-msvc/-/binding-win32-x64-msvc-1.2.11.tgz",
       "homepage": "https://rolldown.rs/",
       "repository": "https://github.com/rolldown/rolldown",
       "licenseFiles": [],
@@ -14279,10 +14279,10 @@
     {
       "ecosystem": "npm",
       "name": "@tauri-apps/cli-win32-x64-msvc",
-      "version": "2.11.4",
+      "version": "2.11.5",
       "license": "Apache-2.0 OR MIT",
-      "source": "https://registry.npmjs.org/@tauri-apps/cli-win32-x64-msvc/-/cli-win32-x64-msvc-2.11.4.tgz",
-      "homepage": "https://github.com/tauri-apps/tauri",
+      "source": "https://registry.npmjs.org/@tauri-apps/cli-win32-x64-msvc/-/cli-win32-x64-msvc-2.11.5.tgz",
+      "homepage": "https://github.com/tauri-apps/tauri#readme",
       "repository": "https://github.com/tauri-apps/tauri",
       "licenseFiles": [],
       "evidenceStatus": "declared-license-only"
@@ -14290,10 +14290,10 @@
     {
       "ecosystem": "npm",
       "name": "@tauri-apps/cli",
-      "version": "2.11.4",
+      "version": "2.11.5",
       "license": "Apache-2.0 OR MIT",
-      "source": "https://registry.npmjs.org/@tauri-apps/cli/-/cli-2.11.4.tgz",
-      "homepage": "https://github.com/tauri-apps/tauri",
+      "source": "https://registry.npmjs.org/@tauri-apps/cli/-/cli-2.11.5.tgz",
+      "homepage": "https://github.com/tauri-apps/tauri#readme",
       "repository": "https://github.com/tauri-apps/tauri",
       "licenseFiles": [
         {
@@ -14533,9 +14533,9 @@
     {
       "ecosystem": "npm",
       "name": "@types/node",
-      "version": "22.20.1",
+      "version": "22.20.4",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/@types/node/-/node-22.20.1.tgz",
+      "source": "https://registry.npmjs.org/@types/node/-/node-22.20.4.tgz",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node",
       "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
       "licenseFiles": [
@@ -15485,9 +15485,9 @@
     {
       "ecosystem": "npm",
       "name": "brace-expansion",
-      "version": "1.1.18",
+      "version": "1.1.21",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-1.1.18.tgz",
+      "source": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-1.1.21.tgz",
       "homepage": "https://github.com/juliangruber/brace-expansion",
       "repository": "https://github.com/juliangruber/brace-expansion",
       "licenseFiles": [
@@ -15502,9 +15502,9 @@
     {
       "ecosystem": "npm",
       "name": "brace-expansion",
-      "version": "2.1.4",
+      "version": "2.1.7",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-2.1.4.tgz",
+      "source": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-2.1.7.tgz",
       "homepage": "https://github.com/juliangruber/brace-expansion",
       "repository": "https://github.com/juliangruber/brace-expansion",
       "licenseFiles": [
@@ -16436,10 +16436,10 @@
     {
       "ecosystem": "npm",
       "name": "electron",
-      "version": "43.2.0",
+      "version": "43.5.0",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/electron/-/electron-43.2.0.tgz",
-      "homepage": "https://github.com/electron/electron",
+      "source": "https://registry.npmjs.org/electron/-/electron-43.5.0.tgz",
+      "homepage": null,
       "repository": "https://github.com/electron/electron",
       "licenseFiles": [
         {
@@ -17104,9 +17104,9 @@
     {
       "ecosystem": "npm",
       "name": "fast-uri",
-      "version": "3.1.6",
+      "version": "3.1.8",
       "license": "BSD-3-Clause",
-      "source": "https://registry.npmjs.org/fast-uri/-/fast-uri-3.1.6.tgz",
+      "source": "https://registry.npmjs.org/fast-uri/-/fast-uri-3.1.8.tgz",
       "homepage": "https://github.com/fastify/fast-uri",
       "repository": "https://github.com/fastify/fast-uri",
       "licenseFiles": [
@@ -17931,10 +17931,10 @@
     {
       "ecosystem": "npm",
       "name": "ip-address",
-      "version": "10.4.0",
+      "version": "10.7.1",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/ip-address/-/ip-address-10.4.0.tgz",
-      "homepage": "https://github.com/beaugunderson/ip-address",
+      "source": "https://registry.npmjs.org/ip-address/-/ip-address-10.7.1.tgz",
+      "homepage": null,
       "repository": "https://github.com/beaugunderson/ip-address",
       "licenseFiles": [
         {
@@ -19737,6 +19737,23 @@
     },
     {
       "ecosystem": "npm",
+      "name": "picomatch",
+      "version": "4.0.7",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/picomatch/-/picomatch-4.0.7.tgz",
+      "homepage": "https://github.com/micromatch/picomatch",
+      "repository": "micromatch/picomatch",
+      "licenseFiles": [
+        {
+          "name": "LICENSE",
+          "file": "licenses/third-party/d0cd141b0c322fded5dfad1d4645bb2fedfc05b7321fe1009469638190d59ef9.txt",
+          "sha256": "d0cd141b0c322fded5dfad1d4645bb2fedfc05b7321fe1009469638190d59ef9"
+        }
+      ],
+      "evidenceStatus": "local-license-text"
+    },
+    {
+      "ecosystem": "npm",
       "name": "pify",
       "version": "2.3.0",
       "license": "MIT",
@@ -19789,11 +19806,11 @@
     {
       "ecosystem": "npm",
       "name": "postcss",
-      "version": "8.5.26",
+      "version": "8.5.28",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/postcss/-/postcss-8.5.26.tgz",
+      "source": "https://registry.npmjs.org/postcss/-/postcss-8.5.28.tgz",
       "homepage": "https://postcss.org/",
-      "repository": null,
+      "repository": "postcss/postcss",
       "licenseFiles": [
         {
           "name": "LICENSE",
@@ -19891,10 +19908,10 @@
     {
       "ecosystem": "npm",
       "name": "proxy-addr",
-      "version": "2.0.7",
+      "version": "2.0.8",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/proxy-addr/-/proxy-addr-2.0.7.tgz",
-      "homepage": "https://github.com/jshttp/proxy-addr",
+      "source": "https://registry.npmjs.org/proxy-addr/-/proxy-addr-2.0.8.tgz",
+      "homepage": null,
       "repository": null,
       "licenseFiles": [
         {
@@ -20259,9 +20276,9 @@
     {
       "ecosystem": "npm",
       "name": "rolldown",
-      "version": "1.2.3",
+      "version": "1.2.11",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/rolldown/-/rolldown-1.2.3.tgz",
+      "source": "https://registry.npmjs.org/rolldown/-/rolldown-1.2.11.tgz",
       "homepage": "https://rolldown.rs/",
       "repository": "https://github.com/rolldown/rolldown",
       "licenseFiles": [
@@ -20684,9 +20701,9 @@
     {
       "ecosystem": "npm",
       "name": "source-map-js",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "license": "BSD-3-Clause",
-      "source": "https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.1.tgz",
+      "source": "https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.2.tgz",
       "homepage": "https://github.com/7rulnik/source-map-js",
       "repository": null,
       "licenseFiles": [
@@ -21408,9 +21425,9 @@
     {
       "ecosystem": "npm",
       "name": "undici",
-      "version": "6.28.1",
+      "version": "6.29.0",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/undici/-/undici-6.28.1.tgz",
+      "source": "https://registry.npmjs.org/undici/-/undici-6.29.0.tgz",
       "homepage": "https://undici.nodejs.org/",
       "repository": "https://github.com/nodejs/undici",
       "licenseFiles": [
@@ -21425,10 +21442,10 @@
     {
       "ecosystem": "npm",
       "name": "undici",
-      "version": "7.29.0",
+      "version": "7.29.1",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/undici/-/undici-7.29.0.tgz",
-      "homepage": "https://undici.nodejs.org/",
+      "source": "https://registry.npmjs.org/undici/-/undici-7.29.1.tgz",
+      "homepage": "https://undici.nodejs.org",
       "repository": "https://github.com/nodejs/undici",
       "licenseFiles": [
         {
@@ -21561,10 +21578,10 @@
     {
       "ecosystem": "npm",
       "name": "vite",
-      "version": "8.2.1",
+      "version": "8.3.1",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/vite/-/vite-8.2.1.tgz",
-      "homepage": "https://vite.dev/",
+      "source": "https://registry.npmjs.org/vite/-/vite-8.3.1.tgz",
+      "homepage": "https://vite.dev",
       "repository": "https://github.com/vitejs/vite",
       "licenseFiles": [
         {
@@ -21933,11 +21950,11 @@
       "evidenceStatus": "local-license-text"
     }
   ],
-  "generatedAt": "2026-09-25T04:30:18.238Z",
+  "generatedAt": "2026-10-14T18:03:49.465Z",
   "npmCoverage": {
     "basis": "pnpm licenses list after a Windows frozen install; includes production and development dependencies. Optional lock resolutions not listed by pnpm remain explicitly outside this license-text inventory.",
-    "lockPackageRecords": 590,
-    "listedPackageVersions": 531,
+    "lockPackageRecords": 592,
+    "listedPackageVersions": 532,
     "unlistedLockResolutions": [
       "@esbuild/aix-ppc64@0.28.2",
       "@esbuild/android-arm64@0.28.2",
@@ -21964,29 +21981,30 @@
       "@esbuild/sunos-x64@0.28.2",
       "@esbuild/win32-arm64@0.28.2",
       "@esbuild/win32-ia32@0.28.2",
-      "@rolldown/binding-android-arm64@1.2.3",
-      "@rolldown/binding-darwin-arm64@1.2.3",
-      "@rolldown/binding-darwin-x64@1.2.3",
-      "@rolldown/binding-freebsd-x64@1.2.3",
-      "@rolldown/binding-linux-arm-gnueabihf@1.2.3",
-      "@rolldown/binding-linux-arm64-gnu@1.2.3",
-      "@rolldown/binding-linux-arm64-musl@1.2.3",
-      "@rolldown/binding-linux-ppc64-gnu@1.2.3",
-      "@rolldown/binding-linux-s390x-gnu@1.2.3",
-      "@rolldown/binding-linux-x64-gnu@1.2.3",
-      "@rolldown/binding-linux-x64-musl@1.2.3",
-      "@rolldown/binding-openharmony-arm64@1.2.3",
-      "@rolldown/binding-win32-arm64-msvc@1.2.3",
-      "@tauri-apps/cli-darwin-arm64@2.11.4",
-      "@tauri-apps/cli-darwin-x64@2.11.4",
-      "@tauri-apps/cli-linux-arm-gnueabihf@2.11.4",
-      "@tauri-apps/cli-linux-arm64-gnu@2.11.4",
-      "@tauri-apps/cli-linux-arm64-musl@2.11.4",
-      "@tauri-apps/cli-linux-riscv64-gnu@2.11.4",
-      "@tauri-apps/cli-linux-x64-gnu@2.11.4",
-      "@tauri-apps/cli-linux-x64-musl@2.11.4",
-      "@tauri-apps/cli-win32-arm64-msvc@2.11.4",
-      "@tauri-apps/cli-win32-ia32-msvc@2.11.4",
+      "@rolldown/binding-android-arm-eabi@1.2.11",
+      "@rolldown/binding-android-arm64@1.2.11",
+      "@rolldown/binding-darwin-arm64@1.2.11",
+      "@rolldown/binding-darwin-x64@1.2.11",
+      "@rolldown/binding-freebsd-x64@1.2.11",
+      "@rolldown/binding-linux-arm-gnueabihf@1.2.11",
+      "@rolldown/binding-linux-arm64-gnu@1.2.11",
+      "@rolldown/binding-linux-arm64-musl@1.2.11",
+      "@rolldown/binding-linux-ppc64-gnu@1.2.11",
+      "@rolldown/binding-linux-s390x-gnu@1.2.11",
+      "@rolldown/binding-linux-x64-gnu@1.2.11",
+      "@rolldown/binding-linux-x64-musl@1.2.11",
+      "@rolldown/binding-openharmony-arm64@1.2.11",
+      "@rolldown/binding-win32-arm64-msvc@1.2.11",
+      "@tauri-apps/cli-darwin-arm64@2.11.5",
+      "@tauri-apps/cli-darwin-x64@2.11.5",
+      "@tauri-apps/cli-linux-arm-gnueabihf@2.11.5",
+      "@tauri-apps/cli-linux-arm64-gnu@2.11.5",
+      "@tauri-apps/cli-linux-arm64-musl@2.11.5",
+      "@tauri-apps/cli-linux-riscv64-gnu@2.11.5",
+      "@tauri-apps/cli-linux-x64-gnu@2.11.5",
+      "@tauri-apps/cli-linux-x64-musl@2.11.5",
+      "@tauri-apps/cli-win32-arm64-msvc@2.11.5",
+      "@tauri-apps/cli-win32-ia32-msvc@2.11.5",
       "fsevents@2.3.3",
       "lightningcss-android-arm64@1.33.0",
       "lightningcss-darwin-arm64@1.33.0",
@@ -22001,7 +22019,7 @@
     ]
   },
   "sourceInputSha256": {
-    "pnpm-lock.yaml": "00ab614d600f4297beb6bc861050d509e8a534411ee85f66f0923d507bb651cb",
+    "pnpm-lock.yaml": "7e4e11ab05272837ea4f0331b1b3f4d30353656d13c21a6c576eef5b7c15f3c5",
     "apps/desktop-tauri/src-tauri/Cargo.lock": "b8a69cd965700a2276abfa1bf980d37ddd4be666f4fcf8861bad8962dd298efc",
     "apps/android-agent/gradle/libs.versions.toml": "12124f7c83b53b3edd34516cbadc60f82d7ca001edcf58ee6bb626b6c79aa06d"
   },

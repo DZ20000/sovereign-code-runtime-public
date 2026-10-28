@@ -16,8 +16,8 @@
       "esbuild"
     ],
     "overrides": {
-      "qs@>=6.0.0 <6.16.0": "6.16.0",
-      "hono@>=4.0.0 <4.13.9": "4.13.9",
+      "qs@>=6.0.0 <6.16.1": "6.16.1",
+      "hono@>=4.0.0 <4.13.11": "4.13.11",
       "@xmldom/xmldom@>=0.9.0 <0.9.12": "0.9.12",
       "external-editor>tmp": "0.2.7",
       "@electron-forge/core-utils>@electron/rebuild": "4.0.6",
@@ -25,9 +25,16 @@
       "@electron-forge/shared-types>@electron/rebuild": "4.0.6",
       "tar@>=7.0.0 <7.5.21": "7.5.21",
       "@electron/packager>extract-zip": "npm:@electron-internal/extract-zip@1.0.5",
-      "fast-uri@>=3.0.0 <3.1.7": "3.1.7",
-      "undici@>=7.28.0 <7.29.1": "7.29.1",
-      "ip-address@>=10.0.0 <10.5.1": "10.5.1"
+      "fast-uri@>=3.0.0 <3.1.9": "3.1.9",
+      "undici@>=7.0.0 <7.30.1": "7.30.1",
+      "undici@>=6.0.0 <6.29.1": "6.29.1",
+      "ip-address@>=10.0.0 <10.7.4": "10.7.4",
+      "proxy-addr@>=2.0.0 <2.0.8": "2.0.8",
+      "brace-expansion@>=1.0.0 <1.1.21": "1.1.21",
+      "brace-expansion@>=2.0.0 <2.1.7": "2.1.7",
+      "source-map-js@>=1.0.0 <1.2.2": "1.2.2",
+      "body-parser@>=2.0.0 <2.4.0": "2.4.0",
+      "http-cache-semantics@<=4.2.0": "4.3.0"
     }
   },
   "scripts": {
@@ -79,7 +86,7 @@
     "@types/express": "^5.0.3",
     "@types/node": "^24.0.10",
     "typescript": "^5.9.2",
-    "vitest": "4.1.11"
+    "vitest": "4.1.12"
   },
   "license": "Apache-2.0"
 }

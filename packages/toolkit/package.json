@@ -18,7 +18,7 @@
   "dependencies": {
     "@sovereign/runtime-core": "workspace:*",
     "@sovereign/windows-adapter": "workspace:*",
-    "zod": "^3.25.76"
+    "zod": "^4.6.7"
   },
   "license": "Apache-2.0"
 }

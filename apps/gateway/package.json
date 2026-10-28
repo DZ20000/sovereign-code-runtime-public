@@ -21,12 +21,12 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@sovereign/runtime-core": "workspace:*",
     "@sovereign/toolkit": "workspace:*",
     "@sovereign/windows-adapter": "workspace:*",
     "express": "^5.1.0",
-    "zod": "^3.25.76"
+    "zod": "^4.6.7"
   },
   "license": "Apache-2.0"
 }
