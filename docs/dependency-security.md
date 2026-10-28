@@ -1,22 +1,14 @@
 # Dependency security review
 
-Review date: 2026-10-15. The lockfiles, not this prose, identify the resolved graph. Advisory data changes; rerun both production and complete audits on the exact candidate before release.
+Review date: 2026-10-28. The lockfiles, not this prose, identify the resolved graph. Advisory data changes; rerun both production and complete audits on the exact candidate before release.
 
 ## Targeted JavaScript changes
 
-The root pnpm overrides constrain known affected ranges for fast-uri to 3.1.8, proxy-addr to 2.0.8, ip-address to 10.7.1, source-map-js to 1.2.2, brace-expansion to the separate compatible 1.1.21 and 2.1.7 branches, qs to 6.16.0, Hono to 4.13.9, and @xmldom/xmldom to 0.9.12. Vitest is pinned to 4.1.11, including its matching mocker implementation. These are configuration requirements; verify their actual resolution and audit results after a frozen install.
+The root pnpm overrides constrain known affected ranges for fast-uri to 3.1.9, proxy-addr to 2.0.8, ip-address to 10.7.4, source-map-js to 1.2.2, brace-expansion to the separate compatible 1.1.21 and 2.1.7 branches, qs to 6.16.1, body-parser to 2.4.0, undici to 7.30.1 and 6.29.1 on their existing major branches, http-cache-semantics to 4.3.0, Hono to 4.13.11, and @xmldom/xmldom to 0.9.12. Vitest is pinned to 4.1.12, including its matching mocker implementation. Zod is updated to the 4.x line (^4.6.7) in the Gateway, toolkit and control-plane packages because the memory-exhaustion advisory has no 3.x fix; the MCP SDK declares support for both Zod 3.25 and Zod 4. These are configuration requirements; verify their actual resolution and audit results after a frozen install.
 
-The Gateway SDK is pinned to 1.31.0, retaining the 1.30.1 HTTP body and batch limits and incorporating the upstream OAuth issuer-binding change. This repository uses the SDK server and a stdio sidecar client; its production code does not configure an SDK HTTP OAuth provider. Applications adding such a provider must follow the [upstream credential-migration and expectedIssuer instructions](https://github.com/advisories/GHSA-6qxp-vccf-f47h). Updating the package alone does not migrate credentials stored by an external application. The Electron 43.5.0 update already on main is retained.
+The Gateway SDK is pinned to 1.32.1, retaining the 1.30.1 HTTP body and batch limits, the 1.31.0 OAuth issuer-binding change, and the 1.32.0 same-origin redirect, session-bound task store and bearer audience fixes. This repository uses the SDK server and a stdio sidecar client; its production code does not configure an SDK HTTP OAuth provider. Applications adding such a provider must follow the [upstream credential-migration and expectedIssuer instructions](https://github.com/advisories/GHSA-6qxp-vccf-f47h). Updating the package alone does not migrate credentials stored by an external application. Electron is updated to 43.8.1 for GHSA-jr5w-w6x2-84p9 and the earlier 43.x advisories.
 
-The 2026-10-15 frozen dependency graph passes the production npm audit with zero advisories. The complete audit still fails on the three legacy Electron build-tool dependencies below; its failure remains enforced in CI.
-
-| Package | Locked version | Dependency path | Advisory |
-| --- | --- | --- | --- |
-| http-cache-semantics | 4.2.0 | Electron Forge core → got → cacheable-request | [GHSA-ch52-4w7c-c8xp](https://github.com/advisories/GHSA-ch52-4w7c-c8xp) |
-| braces | 3.0.3 | Electron Forge core → fast-glob → micromatch | [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) |
-| sprintf-js | 1.1.3 | Electron Forge CLI → @electron/get → global-agent → roarr | [GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) |
-
-These advisories have no published patched version at this review date. They occur in the development graph, not the production audit subset. This scopes the findings without dismissing them or asserting that every build-time input is trusted. Recheck the upstream fixes and compatible parent updates; do not suppress the audit, substitute a package with an incompatible API, or remove supported legacy packaging solely to make the audit pass.
+The 2026-10-28 dependency graph passes both the production and the complete npm audit with zero advisories. The earlier braces (GHSA-vfj7-8cjw-p6xm) and sprintf-js (GHSA-hp3w-g68c-fv3c) findings were withdrawn upstream. The http-cache-semantics advisory (GHSA-ch52-4w7c-c8xp) lists no patched version but affects only 4.2.0 and earlier; the override selects 4.3.0, which is within cacheable-request's declared range. Its release notes do not explicitly describe a max-stale fix, so treat this as leaving the advisory range rather than a confirmed remediation, and recheck upstream. No advisory is suppressed and the complete audit remains enforced in CI.
 
 Electron Forge 7.11.2 still requests @electron/rebuild 3.x. Its core, core-utils, and shared-types edges are deliberately overridden to @electron/rebuild 4.0.6, which uses node-gyp 12 rather than the older Git-sourced node-gyp chain. This is a scoped, cross-major compatibility exception, not an upstream Forge compatibility guarantee. It requires Node 22.12 or later; this project requires Node 24. Test the real Forge IPC rebuild worker on the declared Node version and perform full native Electron packaging acceptance before claiming that legacy packaging is release-ready.
 
@@ -33,7 +25,12 @@ Upstream references:
 - qs: https://github.com/advisories/GHSA-x5fp-wj9c-mxmx
 - Hono security releases: https://github.com/honojs/hono/releases
 - node-tar: https://github.com/advisories/GHSA-r292-9mhp-454m
-- Vitest: https://github.com/advisories/GHSA-82fw-gwwq-j7x9
+- Vitest: https://github.com/advisories/GHSA-82fw-gwwq-j7x9, https://github.com/advisories/GHSA-qxg6-89mg-rqv8 and https://github.com/advisories/GHSA-xp26-3454-mjgp
+- MCP SDK 1.32.0: https://github.com/advisories/GHSA-46jr-4wx8-v453, https://github.com/advisories/GHSA-22jm-h49p-29qw, https://github.com/advisories/GHSA-rvq5-wwqv-78pq and https://github.com/advisories/GHSA-6prh-2h8m-c8cw
+- Zod: https://github.com/advisories/GHSA-mrhx-c7xc-m3w5
+- body-parser: https://github.com/advisories/GHSA-27r3-jxmh-p828
+- http-cache-semantics: https://github.com/advisories/GHSA-ch52-4w7c-c8xp
+- Electron: https://github.com/advisories/GHSA-jr5w-w6x2-84p9
 - Forge dependency tracking: https://github.com/electron/forge/issues/4228
 
 ## Electron archive extraction replacement
