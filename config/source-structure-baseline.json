@@ -88,12 +88,6 @@
       "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
     },
     {
-      "path": "packages/control-plane/src/sandbox-manager.ts",
-      "observedLines": 1265,
-      "maximumLines": 1265,
-      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
-    },
-    {
       "path": "packages/control-plane/src/secure-tunnel.ts",
       "observedLines": 1270,
       "maximumLines": 1270,
