@@ -5,20 +5,20 @@
   "entries": [
     {
       "path": "apps/desktop-tauri/src-tauri/src/lib.rs",
-      "observedLines": 1466,
-      "maximumLines": 1466,
+      "observedLines": 1293,
+      "maximumLines": 1293,
       "reason": "Reviewed desktop quick-update candidate ceiling after validated network/guardian recovery integration; further growth still requires a cohesive extraction."
     },
     {
       "path": "apps/desktop-tauri/src-tauri/src/renderer_update.rs",
-      "observedLines": 4001,
-      "maximumLines": 4001,
+      "observedLines": 3285,
+      "maximumLines": 3285,
       "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
     },
     {
       "path": "apps/desktop-tauri/src-tauri/src/runtime_candidate_update.rs",
-      "observedLines": 1863,
-      "maximumLines": 1863,
+      "observedLines": 1739,
+      "maximumLines": 1739,
       "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
     },
     {
@@ -29,80 +29,80 @@
     },
     {
       "path": "apps/desktop/src/main.ts",
-      "observedLines": 1318,
-      "maximumLines": 1318,
+      "observedLines": 1298,
+      "maximumLines": 1298,
       "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
     },
     {
       "path": "apps/desktop/src/renderer/main.ts",
-      "observedLines": 5009,
-      "maximumLines": 5009,
+      "observedLines": 4997,
+      "maximumLines": 4997,
       "reason": "Existing oversized module captured when the guard was activated; the latest committed main includes one reviewed stylesheet import, and further growth requires a cohesive extraction."
     },
     {
       "path": "apps/desktop/src/renderer/product-shell.css",
-      "observedLines": 1322,
-      "maximumLines": 1322,
+      "observedLines": 1307,
+      "maximumLines": 1307,
       "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
     },
     {
       "path": "apps/desktop/src/renderer/styles.css",
-      "observedLines": 3538,
-      "maximumLines": 3538,
+      "observedLines": 3498,
+      "maximumLines": 3498,
       "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
     },
     {
       "path": "apps/desktop/src/renderer/tasks-controller.ts",
-      "observedLines": 1530,
-      "maximumLines": 1530,
+      "observedLines": 1505,
+      "maximumLines": 1505,
       "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
     },
     {
       "path": "apps/desktop/src/renderer/ui-refinement.css",
-      "observedLines": 4521,
-      "maximumLines": 4521,
+      "observedLines": 4097,
+      "maximumLines": 4097,
       "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
     },
     {
       "path": "apps/desktop/src/renderer/ui-system.css",
-      "observedLines": 2317,
-      "maximumLines": 2317,
+      "observedLines": 2007,
+      "maximumLines": 2007,
       "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
     },
     {
       "path": "apps/desktop/src/renderer/workbench.css",
-      "observedLines": 4223,
-      "maximumLines": 4223,
+      "observedLines": 4165,
+      "maximumLines": 4165,
       "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
     },
     {
       "path": "apps/desktop/src/visual-test.ts",
-      "observedLines": 4573,
-      "maximumLines": 4573,
+      "observedLines": 4261,
+      "maximumLines": 4261,
       "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
     },
     {
       "path": "packages/control-plane/src/controller.ts",
-      "observedLines": 2770,
-      "maximumLines": 2770,
+      "observedLines": 2722,
+      "maximumLines": 2722,
       "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
     },
     {
       "path": "packages/control-plane/src/secure-tunnel.ts",
-      "observedLines": 1270,
-      "maximumLines": 1270,
+      "observedLines": 1252,
+      "maximumLines": 1252,
       "reason": "Connector option validation and process primitives were extracted to secure-tunnel-support.ts; the ceiling follows the smaller file."
     },
     {
       "path": "packages/control-plane/src/task-registry.ts",
-      "observedLines": 1837,
-      "maximumLines": 1837,
+      "observedLines": 1793,
+      "maximumLines": 1793,
       "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
     },
     {
       "path": "packages/toolkit/src/index.ts",
-      "observedLines": 2597,
-      "maximumLines": 2597,
+      "observedLines": 2549,
+      "maximumLines": 2549,
       "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
     },
     {
@@ -119,8 +119,8 @@
     },
     {
       "path": "packages/windows-adapter/src/index.ts",
-      "observedLines": 3162,
-      "maximumLines": 3162,
+      "observedLines": 2923,
+      "maximumLines": 2923,
       "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
     }
   ]
