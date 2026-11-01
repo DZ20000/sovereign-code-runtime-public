@@ -26,7 +26,7 @@
     "@sovereign/toolkit": "workspace:*",
     "@sovereign/windows-adapter": "workspace:*",
     "express": "^5.1.0",
-    "zod": "^3.25.76"
+    "zod": "^4.6.6"
   },
   "license": "Apache-2.0"
 }
