@@ -4,6 +4,7 @@ import type {
   DesktopRunSummary,
   SovereignDesktopApi,
 } from "../shared.js";
+import { runTaskId, runsInTaskScope } from "./task-run-scope.js";
 
 interface RunsControllerOptions {
   readonly api: Pick<SovereignDesktopApi, "getRuns" | "getRun" | "cancelRun">;
@@ -16,7 +17,6 @@ interface RunsControllerOptions {
 }
 
 const ACTIVE_STATES = new Set<DesktopRunState>(["queued", "running"]);
-const ACTIVE_OUTPUT_LIMIT = 3_000;
 
 function requiredElement<T extends HTMLElement>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -104,13 +104,6 @@ function outputBytes(value: string): number {
   return new TextEncoder().encode(value).byteLength;
 }
 
-function recentOutput(value: string): string {
-  if (value.length <= ACTIVE_OUTPUT_LIMIT) {
-    return value;
-  }
-  return `…${value.slice(-ACTIVE_OUTPUT_LIMIT)}`;
-}
-
 function renderOutputText(element: HTMLElement, value: string, emptyText: string): void {
   if (value.length === 0) {
     element.dataset.i18nPlaceholder = "";
@@ -121,6 +114,10 @@ function renderOutputText(element: HTMLElement, value: string, emptyText: string
   element.textContent = value;
 }
 
+function localText(english: string, chinese: string): string {
+  return currentLocale() === "zh-CN" ? chinese : english;
+}
+
 export class RunsController {
   readonly #api: RunsControllerOptions["api"];
   readonly #notify: RunsControllerOptions["notify"];
@@ -128,7 +125,8 @@ export class RunsController {
   readonly #onActiveRunChanged: RunsControllerOptions["onActiveRunChanged"];
   #summaries: readonly DesktopRunSummary[] = [];
   #selectedRunId: string | null = null;
-  #activeRunId: string | null = null;
+  #taskId: string | null = null;
+  #selectionGeneration = 0;
   #refreshing = false;
 
   constructor(options: RunsControllerOptions) {
@@ -139,276 +137,187 @@ export class RunsController {
   }
 
   mount(): void {
-    requiredElement<HTMLButtonElement>("#runs-refresh").addEventListener("click", () => {
-      void this.refresh();
+    requiredElement("#runs-refresh").addEventListener("click", () => { void this.refresh(); });
+    requiredElement("#run-cancel").addEventListener("click", () => { void this.#cancelRun(); });
+    requiredElement("#runs-list").addEventListener("click", (event) => {
+      const button = event.target instanceof Element
+        ? event.target.closest<HTMLButtonElement>("button[data-run-id]") : null;
+      if (button?.dataset.runId !== undefined) this.#selectRun(button.dataset.runId);
     });
-    requiredElement<HTMLButtonElement>("#run-cancel").addEventListener("click", () => {
-      void this.#cancelRun(this.#selectedRunId);
-    });
-    requiredElement<HTMLButtonElement>("#active-run-cancel").addEventListener("click", () => {
-      void this.#cancelRun(this.#activeRunId);
-    });
-    requiredElement<HTMLButtonElement>("#active-run-view").addEventListener("click", () => {
-      if (this.#activeRunId === null) {
-        return;
-      }
-      document.querySelector<HTMLButtonElement>("#runs-tab-runs")?.click();
-      this.#selectRun(this.#activeRunId);
-    });
-    requiredElement<HTMLDivElement>("#runs-list").addEventListener("click", (event) => {
-      const target = event.target;
-      const button = target instanceof Element
-        ? target.closest<HTMLButtonElement>("button[data-run-id]")
-        : null;
-      const runId = button?.dataset.runId;
-      if (runId !== undefined) {
-        this.#selectRun(runId);
-      }
-    });
+  }
+
+  setTaskScope(taskId: string | null): void {
+    if (this.#taskId === taskId) return;
+    this.#taskId = taskId;
+    const runs = this.#scopedRuns();
+    this.#selectRun(runs.find((run) => ACTIVE_STATES.has(run.state))?.id ?? runs[0]?.id ?? null);
   }
 
   openRun(runId: string): void {
+    if (!this.#scopedRuns().some((run) => run.id === runId)) this.#taskId = null;
     this.#selectRun(runId);
   }
 
+  #scopedRuns(): readonly DesktopRunSummary[] {
+    return runsInTaskScope(this.#summaries, this.#taskId);
+  }
+
   async refresh(summaries?: readonly DesktopRunSummary[]): Promise<void> {
-    if (this.#refreshing) {
-      return;
-    }
+    if (this.#refreshing) return;
     this.#refreshing = true;
     try {
       this.#summaries = summaries ?? await this.#api.getRuns(100);
       this.#onSummariesChanged?.(this.#summaries);
-
       const activeRuns = this.#summaries.filter((run) => ACTIVE_STATES.has(run.state));
-      this.#activeRunId = activeRuns[0]?.id ?? null;
-      if (
-        this.#selectedRunId === null ||
-        !this.#summaries.some((run) => run.id === this.#selectedRunId)
-      ) {
-        this.#selectedRunId = this.#activeRunId ?? this.#summaries[0]?.id ?? null;
+      const scoped = this.#scopedRuns();
+      if (!scoped.some((run) => run.id === this.#selectedRunId)) {
+        this.#selectedRunId = scoped.find((run) => ACTIVE_STATES.has(run.state))?.id ?? scoped[0]?.id ?? null;
+        this.#selectionGeneration += 1;
+        this.#renderDetail(null);
       }
-
       this.#renderList();
-      this.#renderActiveSummary(activeRuns[0] ?? null, activeRuns.length);
-
-      const requestedIds = [...new Set(
-        [this.#selectedRunId, this.#activeRunId].filter((runId): runId is string => runId !== null),
-      )];
+      const generation = this.#selectionGeneration;
+      const selected = this.#selectedRunId;
+      const active = activeRuns[0]?.id ?? null;
       const records = new Map<string, DesktopRunRecord>();
-      await Promise.all(requestedIds.map(async (runId) => {
-        try {
-          records.set(runId, await this.#api.getRun(runId));
-        } catch (error) {
-          this.#notify(error instanceof Error ? error.message : "Could not read run details.", true);
-        }
+      await Promise.all([...new Set([selected, active].filter((id): id is string => id !== null))].map(async (id) => {
+        try { records.set(id, await this.#api.getRun(id)); }
+        catch (error) { this.#notify(error instanceof Error ? error.message : "Could not read run details.", true); }
       }));
-
-      this.#renderDetail(this.#selectedRunId === null ? null : records.get(this.#selectedRunId) ?? null);
-      const activeRecord = this.#activeRunId === null
-        ? null
-        : records.get(this.#activeRunId) ?? null;
-      this.#renderActiveRun(activeRecord, activeRuns.length);
-      this.#onActiveRunChanged?.(activeRecord, activeRuns.length);
-      requiredElement<HTMLElement>("#runs-refreshed").textContent =
-        `Updated ${formatTimestamp(new Date().toISOString())}`;
+      if (generation === this.#selectionGeneration) {
+        this.#renderDetail(selected === null ? null : records.get(selected) ?? null);
+      }
+      this.#onActiveRunChanged?.(active === null ? null : records.get(active) ?? null, activeRuns.length);
+      requiredElement("#runs-refreshed").textContent =
+        localText("Updated ", "更新于 ") + formatTimestamp(new Date().toISOString());
     } catch (error) {
-      this.#notify(
-        error instanceof Error ? error.message : "Could not refresh background runs.",
-        true,
-      );
+      this.#notify(error instanceof Error ? error.message : "Could not refresh background runs.", true);
     } finally {
       this.#refreshing = false;
     }
   }
 
-  #selectRun(runId: string): void {
+  #selectRun(runId: string | null): void {
     this.#selectedRunId = runId;
+    const generation = ++this.#selectionGeneration;
     this.#renderList();
+    this.#renderDetail(null);
+    if (runId === null) return;
     void this.#api.getRun(runId).then((run) => {
-      if (this.#selectedRunId === runId) {
-        this.#renderDetail(run);
-      }
+      if (generation === this.#selectionGeneration && this.#selectedRunId === run.id) this.#renderDetail(run);
     }).catch((error: unknown) => {
-      if (this.#selectedRunId === runId) {
-        this.#renderDetail(null);
-        this.#notify(error instanceof Error ? error.message : "Could not read run details.", true);
-      }
+      if (generation !== this.#selectionGeneration) return;
+      this.#notify(error instanceof Error ? error.message : "Could not read run details.", true);
     });
   }
 
-  async #cancelRun(runId: string | null): Promise<void> {
-    if (runId === null) {
-      return;
-    }
-    const detailButton = requiredElement<HTMLButtonElement>("#run-cancel");
-    const activeButton = requiredElement<HTMLButtonElement>("#active-run-cancel");
-    detailButton.disabled = true;
-    activeButton.disabled = true;
+  async #cancelRun(): Promise<void> {
+    const runId = this.#selectedRunId;
+    if (runId === null) return;
+    requiredElement<HTMLButtonElement>("#run-cancel").disabled = true;
     try {
       const run = await this.#api.cancelRun(runId);
-      if (run.id === this.#selectedRunId) {
-        this.#renderDetail(run);
-      }
-      if (run.id === this.#activeRunId) {
-        this.#renderActiveRun(run, this.#summaries.filter((item) => ACTIVE_STATES.has(item.state)).length);
-      }
-      this.#notify(run.cancelRequested ? "Task cancellation requested." : "Task is already complete.");
+      if (run.id === this.#selectedRunId) this.#renderDetail(run);
+      this.#notify(run.cancelRequested
+        ? localText("Run cancellation requested.", "已请求取消运行。")
+        : localText("Run is already complete.", "运行已经结束。"));
       await this.refresh();
     } catch (error) {
-      this.#notify(error instanceof Error ? error.message : "Could not cancel the task.", true);
+      this.#notify(error instanceof Error ? error.message : "Could not cancel the run.", true);
       await this.refresh();
     }
   }
 
   #renderList(): void {
-    const container = requiredElement<HTMLDivElement>("#runs-list");
-    const activeCount = this.#summaries.filter((run) => ACTIVE_STATES.has(run.state)).length;
-    requiredElement<HTMLElement>("#runs-count").textContent =
-      activeCount > 0
-        ? `${activeCount} active · ${this.#summaries.length} total`
-        : `${this.#summaries.length} run${this.#summaries.length === 1 ? "" : "s"}`;
-    const hasRuns = this.#summaries.length > 0;
-    requiredElement<HTMLElement>("#runs-empty-state").hidden = hasRuns;
-    requiredElement<HTMLElement>("#runs-workbench").hidden = !hasRuns;
+    const runs = this.#scopedRuns();
+    const container = requiredElement("#runs-list");
+    const focused = document.activeElement instanceof HTMLElement && container.contains(document.activeElement)
+      ? document.activeElement.closest<HTMLElement>("[data-run-id]")?.dataset.runId : undefined;
+    requiredElement("#runs-workbench-root").dataset.runScope = this.#taskId === null ? "all" : "task";
+    requiredElement("#runs-scope-label").textContent = this.#taskId === null
+      ? localText("All runs", "全部运行") : localText("Associated runs", "关联运行");
+    requiredElement("#runs-count").textContent = localText(`${runs.length} runs`, `${runs.length} 次运行`);
+    requiredElement("#run-scope-all").hidden = this.#taskId === null;
+    requiredElement("#run-back-conversation").hidden = this.#taskId === null;
+    requiredElement("#runs-empty-state").hidden = runs.length > 0;
+    requiredElement("#runs-workbench").hidden = runs.length === 0;
+    requiredElement("#runs-empty-title").textContent = this.#taskId === null
+      ? localText("No run history yet", "暂无运行历史") : localText("No associated runs yet", "暂无关联运行");
+    requiredElement("#runs-empty-description").textContent = this.#taskId === null
+      ? localText("Managed processes, validation, Python and workflow runs appear here.", "托管进程、验证、Python 与工作流运行将显示在这里。")
+      : localText("View all runs to inspect other execution records.", "可在全部运行中查看其他执行记录。");
     container.replaceChildren();
-
-    if (!hasRuns) {
-      return;
-    }
-
-    const orderedRuns = [
-      ...this.#summaries.filter((run) => ACTIVE_STATES.has(run.state)),
-      ...this.#summaries.filter((run) => !ACTIVE_STATES.has(run.state)),
-    ];
-    for (const run of orderedRuns) {
+    const ordered = [...runs.filter((run) => ACTIVE_STATES.has(run.state)), ...runs.filter((run) => !ACTIVE_STATES.has(run.state))];
+    for (const run of ordered) {
       const button = document.createElement("button");
       button.type = "button";
       button.dataset.runId = run.id;
-      button.className = "run-row";
+      button.className = "v2-run-row";
       button.classList.toggle("is-selected", run.id === this.#selectedRunId);
-      button.setAttribute("aria-pressed", run.id === this.#selectedRunId ? "true" : "false");
-
+      button.setAttribute("aria-pressed", String(run.id === this.#selectedRunId));
       const identity = document.createElement("div");
-      identity.className = "run-row-identity";
+      identity.className = "v2-run-row-identity";
       const label = document.createElement("strong");
-      label.setAttribute("data-no-i18n", "");
+      label.dataset.noI18n = "";
       label.textContent = run.label;
       const detail = document.createElement("span");
-      detail.textContent = `${run.kind} · ${run.id.slice(0, 8)} · `;
-      // Its own element so a narrow row breaks before the timestamp rather
-      // than inside it, which would read as two separate values.
-      const created = document.createElement("time");
-      created.dateTime = run.createdAt;
-      created.textContent = formatTimestamp(run.createdAt);
-      detail.append(created);
+      detail.dataset.noI18n = "";
+      const taskId = runTaskId(run);
+      detail.textContent = `${run.kind} · ${run.id.slice(0, 8)} · ${taskId === null
+        ? localText("No associated task", "未关联任务")
+        : localText("Task ", "任务 ") + taskId} · ${formatTimestamp(run.createdAt)}`;
       identity.append(label, detail);
-
       const status = document.createElement("span");
       status.className = `run-state run-state-${run.state}`;
       status.textContent = stateLabel(run.state, run.cancelRequested);
-
       button.append(identity, status);
       container.append(button);
+      if (focused === run.id) button.focus({ preventScroll: true });
     }
   }
 
-  #renderActiveSummary(run: DesktopRunSummary | null, activeCount: number): void {
-    const section = requiredElement<HTMLElement>("#active-run-section");
-    const empty = requiredElement<HTMLElement>("#active-run-empty");
-    section.hidden = run === null;
-    empty.hidden = run !== null;
-    if (run === null) {
-      return;
-    }
-
-    requiredElement<HTMLElement>("#active-run-title").setAttribute("data-no-i18n", "");
-    requiredElement<HTMLElement>("#active-run-title").textContent = run.label;
-    requiredElement<HTMLElement>("#active-run-kind").textContent = `${run.kind} · ${run.id.slice(0, 8)}`;
-    const state = requiredElement<HTMLElement>("#active-run-state");
-    state.className = `run-state run-state-${run.state}`;
-    state.textContent = stateLabel(run.state, run.cancelRequested);
-    requiredElement<HTMLElement>("#active-run-count").textContent =
-      `${activeCount} active task${activeCount === 1 ? "" : "s"}`;
-    requiredElement<HTMLElement>("#active-run-started").textContent = formatTimestamp(run.startedAt);
-    requiredElement<HTMLElement>("#active-run-duration").textContent = formatDuration(effectiveDuration(run));
-    renderOutputText(requiredElement<HTMLElement>("#active-run-output"), "", "Loading recent output…");
-    requiredElement<HTMLElement>("#active-run-output-size").textContent =
-      formatBytes(run.stdoutBytes + run.stderrBytes);
-    requiredElement<HTMLButtonElement>("#active-run-cancel").disabled = run.cancelRequested;
-  }
-
-  #renderActiveRun(run: DesktopRunRecord | null, activeCount: number): void {
-    if (run === null) {
-      if (this.#activeRunId === null) {
-        requiredElement<HTMLElement>("#active-run-section").hidden = true;
-        requiredElement<HTMLElement>("#active-run-empty").hidden = false;
-      }
-      return;
-    }
-
-    requiredElement<HTMLElement>("#active-run-title").setAttribute("data-no-i18n", "");
-    requiredElement<HTMLElement>("#active-run-title").textContent = run.label;
-    requiredElement<HTMLElement>("#active-run-kind").textContent = `${run.kind} · ${run.id.slice(0, 8)}`;
-    const state = requiredElement<HTMLElement>("#active-run-state");
-    state.className = `run-state run-state-${run.state}`;
-    state.textContent = stateLabel(run.state, run.cancelRequested);
-    requiredElement<HTMLElement>("#active-run-count").textContent =
-      `${activeCount} active task${activeCount === 1 ? "" : "s"}`;
-    requiredElement<HTMLElement>("#active-run-started").textContent = formatTimestamp(run.startedAt);
-    requiredElement<HTMLElement>("#active-run-duration").textContent = formatDuration(effectiveDuration(run));
-
-    const output = run.stdout.length > 0 ? run.stdout : run.stderr;
-    requiredElement<HTMLElement>("#active-run-output-label").textContent =
-      run.stdout.length > 0 ? "Recent output" : run.stderr.length > 0 ? "Recent errors" : "Recent output";
-    renderOutputText(requiredElement<HTMLElement>("#active-run-output"), recentOutput(output), "No output yet.");
-    requiredElement<HTMLElement>("#active-run-output-size").textContent = formatBytes(outputBytes(output));
-    requiredElement<HTMLButtonElement>("#active-run-cancel").disabled =
-      !ACTIVE_STATES.has(run.state) || run.cancelRequested;
-  }
-
-  #renderDetail(run: DesktopRunRecord | null): void {
-    const title = requiredElement<HTMLElement>("#run-detail-title");
-    const meta = requiredElement<HTMLElement>("#run-detail-meta");
-    const values = meta.querySelectorAll<HTMLElement>("dd");
+  #renderDetail(record: DesktopRunRecord | null): void {
+    const run = record !== null && (this.#taskId === null || runTaskId(record) === this.#taskId) ? record : null;
+    const title = requiredElement("#run-detail-title");
+    const values = requiredElement("#run-detail-meta").querySelectorAll<HTMLElement>("dd");
     const cancel = requiredElement<HTMLButtonElement>("#run-cancel");
-    const stdout = requiredElement<HTMLElement>("#run-stdout");
-    const stderr = requiredElement<HTMLElement>("#run-stderr");
-
+    const association = requiredElement("#run-detail-association");
+    const identity = requiredElement("#run-detail-identity");
+    const stdout = requiredElement("#run-stdout");
+    const stderr = requiredElement("#run-stderr");
+    requiredElement("#run-output-truncated").hidden = run?.outputTruncated !== true;
     if (run === null) {
       title.removeAttribute("data-no-i18n");
-      title.textContent = "No run selected";
-      for (const value of values) {
-        value.textContent = "—";
-      }
+      title.textContent = localText("No run selected", "未选择运行");
+      identity.textContent = "";
+      association.textContent = "";
+      for (const value of values) value.textContent = "—";
       cancel.disabled = true;
-      cancel.textContent = "Cancel task";
+      cancel.textContent = localText("Cancel run", "取消运行");
       renderOutputText(stdout, "", "Select a run to inspect output.");
       renderOutputText(stderr, "", "Select a run to inspect output.");
-      requiredElement<HTMLElement>("#run-stdout-size").textContent = "0 B";
-      requiredElement<HTMLElement>("#run-stderr-size").textContent = "0 B";
+      requiredElement("#run-stdout-size").textContent = "0 B";
+      requiredElement("#run-stderr-size").textContent = "0 B";
       return;
     }
-
-    title.setAttribute("data-no-i18n", "");
+    title.dataset.noI18n = "";
     title.textContent = run.label;
+    identity.textContent = `${run.kind} · ${run.id} · ${run.workspaceId}`;
+    const taskId = runTaskId(run);
+    association.dataset.noI18n = "";
+    association.textContent = taskId === null ? localText("No associated task", "未关联任务")
+      : localText("Task ", "任务 ") + taskId;
     const detailValues = [
-      stateLabel(run.state, run.cancelRequested),
-      formatTimestamp(run.startedAt),
-      formatDuration(effectiveDuration(run)),
-      run.exitCode === null ? run.signal ?? "—" : String(run.exitCode),
+      stateLabel(run.state, run.cancelRequested), formatTimestamp(run.startedAt),
+      formatDuration(effectiveDuration(run)), run.exitCode === null ? run.signal ?? "—" : String(run.exitCode),
     ];
-    values.forEach((value, index) => {
-      value.textContent = detailValues[index] ?? "—";
-    });
-
+    values.forEach((value, index) => { value.textContent = detailValues[index] ?? "—"; });
     cancel.disabled = !ACTIVE_STATES.has(run.state) || run.cancelRequested;
     cancel.textContent = run.cancelRequested && ACTIVE_STATES.has(run.state)
-      ? "Cancelling…"
-      : "Cancel task";
+      ? localText("Cancelling…", "正在取消…") : localText("Cancel run", "取消运行");
     renderOutputText(stdout, run.stdout, "No stdout captured.");
     renderOutputText(stderr, run.stderr, "No stderr captured.");
-    requiredElement<HTMLElement>("#run-stdout-size").textContent = formatBytes(outputBytes(run.stdout));
-    requiredElement<HTMLElement>("#run-stderr-size").textContent = formatBytes(outputBytes(run.stderr));
+    requiredElement("#run-stdout-size").textContent = formatBytes(outputBytes(run.stdout));
+    requiredElement("#run-stderr-size").textContent = formatBytes(outputBytes(run.stderr));
   }
 }

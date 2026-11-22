@@ -1,3 +1,5 @@
+import type { DesktopApprovalContext } from "./approvals.js";
+
 export type RuntimePhase =
   | "setup-required"
   | "stopped"
@@ -12,6 +14,7 @@ export type DesktopApprovalMode = "none" | "session" | "single-use";
 export type DesktopApprovalDecision = "allow-once" | "deny" | "drop-to-l1";
 
 export interface DesktopApprovalView {
+  readonly context?: DesktopApprovalContext;
   readonly id: string;
   readonly toolName: string;
   readonly title: string;
@@ -23,6 +26,7 @@ export interface DesktopApprovalView {
 }
 
 export interface SovereignApprovalApi {
+  readonly dismiss: (returnToCenter?: boolean) => Promise<void>;
   readonly getCurrent: () => Promise<DesktopApprovalView | null>;
   readonly resolve: (requestId: string, decision: DesktopApprovalDecision) => Promise<void>;
 }

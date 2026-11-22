@@ -169,10 +169,16 @@ describe("task and Agent hub static security guards", () => {
       "run-electron-visual.mjs",
     );
     const harness = source("apps", "desktop", "src", "visual-test.ts");
-    expect(runner).toContain("mkdtemp");
+    const workspace = source("apps", "desktop", "scripts", "visual-workspace.mjs");
+    expect(runner).toContain("createVisualWorkspace");
+    expect(runner).toContain("removeVisualProfile");
+    expect(workspace).toContain("mkdtempSync");
+    expect(workspace).toContain("validateVisualWorkspace");
+    expect(workspace).toContain('relative(outputRoot, userDataRoot) !== "user-data"');
+    expect(workspace).toContain('marker.runId !== runId');
     expect(runner).toContain("SCR_VISUAL_USER_DATA");
     expect(runner).toContain("shell: false");
-    expect(runner).toContain("maxRetries: 8");
+    expect(workspace).toContain("maxRetries: 8");
     expect(harness).toContain("USER_DATA_ROOT");
     expect(harness).toContain('app.setPath("userData", USER_DATA_ROOT)');
   });
@@ -215,7 +221,7 @@ describe("task and Agent hub static security guards", () => {
       "renderer",
       "tasks-controller.ts",
     );
-    const styles = ["task-hub.css", "task-board.css"].map((file) => source("apps", "desktop", "src", "renderer", file)).join("\n");
+    const styles = source("apps", "desktop", "src", "renderer", "v2.css");
     const progressModel = source(
       "apps",
       "desktop",
@@ -242,13 +248,14 @@ describe("task and Agent hub static security guards", () => {
     expect(controller).toContain("preserveSourceText");
     expect(controller).toContain('setAttribute("data-no-i18n", "")');
     expect(controller).toContain("is-indeterminate");
-    const focusRule = styles.match(
-      /#view-tasks :is\(input, select, textarea\):focus-visible\s*\{[^}]+\}/u,
-    )?.[0];
-    expect(focusRule).toBeDefined();
-    expect(focusRule).toContain("outline: 2px solid var(--ui-accent)");
-    expect(styles).toContain("grid-template-columns: var(--task-list-size) minmax(340px, 1fr)");
-    expect(styles).toContain(".task-agent-activity");
+    const focusRule = styles.match(/:focus-visible\s*\{[^}]+\}/u)?.[0];
+    expect(focusRule).toContain("outline: 2px solid var(--color-focus)");
+    const workbenchRule = styles.match(/\.v2-tasks\s*\{[^}]+\}/u)?.[0];
+    expect(workbenchRule).toContain("var(--task-list-width");
+    expect(workbenchRule).toContain("minmax(0, 1fr)");
+    const logRule = styles.match(/\.task-message-list[^{}]*\{[^}]+\}/u)?.[0];
+    expect(logRule).toContain("min-height: 0");
+    expect(logRule).toContain("overflow: auto");
     expect(controller).toContain('button.classList.toggle("task-source-inferred", isInferredTask(task))');
     expect(controller).toContain("userDelivery: userMessageDeliveryLabel");
     expect(controller).toContain("acknowledgedAt");
@@ -256,7 +263,10 @@ describe("task and Agent hub static security guards", () => {
     expect(source("apps", "desktop", "src", "renderer", "task-conversation-delivery.ts")).toContain("Delivered to Agent");
     expect(controller).toContain("next tool result");
     expect(styles).toContain(".task-message-delivery-acknowledged");
-    expect(styles).toContain(".task-message-delivery-pending");
+    const messageRows = source("apps", "desktop", "src", "renderer", "task-message-list.ts");
+    expect(messageRows).toContain("task-message-delivery-" + "${delivery.tone}");
+    expect(controller).toContain('tone: "pending"');
+    expect(controller).toContain('tone: "acknowledged"');
   });
 
   it("reconciles task step rows by identity instead of replacing the detail list", () => {
@@ -413,9 +423,24 @@ describe("task and Agent hub static security guards", () => {
       "task-refresh-failure-policy.ts",
     );
     expect(main).toContain("tasksController.refresh().catch(() => undefined)");
-    expect(main).toContain(
-      "await Promise.all([runsController.refresh(), tasksController.refresh()])",
-    );
+    const parsed = ts.createSourceFile("renderer-main.ts", main, ts.ScriptTarget.Latest, true);
+    let awaitedTogether = false;
+    const visit = (node: ts.Node): void => {
+      if (ts.isCallExpression(node) && ts.isAwaitExpression(node.parent) &&
+          ts.isPropertyAccessExpression(node.expression) &&
+          node.expression.expression.getText(parsed) === "Promise" && node.expression.name.text === "all") {
+        const argument = node.arguments[0];
+        if (argument !== undefined && ts.isArrayLiteralExpression(argument)) {
+          const refreshes = new Set(argument.elements.filter(ts.isCallExpression)
+            .filter((call) => ts.isPropertyAccessExpression(call.expression) && call.expression.name.text === "refresh")
+            .map((call) => (call.expression as ts.PropertyAccessExpression).expression.getText(parsed)));
+          awaitedTogether ||= refreshes.has("runsController") && refreshes.has("tasksController");
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(parsed);
+    expect(awaitedTogether).toBe(true);
     expect(controller).toContain(
       'void this.refresh("manual").catch(() => undefined)',
     );
@@ -488,7 +513,7 @@ describe("task and Agent hub static security guards", () => {
       "renderer",
       "task-detail-loading.ts",
     );
-    const styles = source("apps", "desktop", "src", "renderer", "task-board.css");
+    const styles = source("apps", "desktop", "src", "renderer", "v2.css");
     expect(view).toContain('id="task-detail-loading"');
     expect(view).toContain('id="task-detail-loading-label"');
     expect(view).toContain('id="task-detail-freshness"');
@@ -508,8 +533,7 @@ describe("task and Agent hub static security guards", () => {
     );
     expect(loading).toContain("freshness.hidden = !unavailable");
     expect(loading).toContain("requiredElement(document, id).hidden = loading");
-    const hiddenBlock = [styles, source("apps", "desktop", "src", "renderer", "styles.css")]
-      .join("\n")
+    const hiddenBlock = styles
       .match(/\[hidden\][^{]*\{[^}]*\}/gu)
       ?.find((block) => block.includes("display: none !important"));
     expect(hiddenBlock).toBeDefined();

@@ -8,17 +8,14 @@ import { EditorView, keymap } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 
 const CODEMIRROR_CSP_NONCE = "U09WRVJFSUdOLUNPREVNSVJST1I=";
+// The design uses neutral code text; comments and invalid spans retain distinct cues.
 const WORKBENCH_HIGHLIGHT = HighlightStyle.define([
-  { tag: tags.keyword, color: "#a5b4fc" },
-  { tag: [tags.string, tags.regexp], color: "#a3d4a0" },
-  { tag: [tags.number, tags.bool, tags.null], color: "#e8c082" },
-  { tag: tags.comment, color: "#a0a8b6", fontStyle: "italic" },
-  { tag: [tags.variableName, tags.propertyName], color: "#e6e8ee" },
-  { tag: [tags.typeName, tags.className], color: "#93c5fd" },
-  { tag: tags.function(tags.variableName), color: "#9ad5df" },
-  { tag: [tags.operator, tags.punctuation], color: "#cbd5e1" },
-  { tag: tags.invalid, color: "#fca5a5", textDecoration: "underline" },
-], { themeType: "dark" });
+  { tag: [tags.keyword, tags.string, tags.regexp, tags.number, tags.bool, tags.null,
+      tags.variableName, tags.propertyName, tags.typeName, tags.className,
+      tags.function(tags.variableName), tags.operator, tags.punctuation], color: "var(--color-text)" },
+  { tag: tags.comment, color: "var(--color-secondary)", fontStyle: "italic" },
+  { tag: tags.invalid, color: "var(--color-text)", textDecoration: "underline", textDecorationColor: "var(--color-danger)" },
+]);
 
 export type WorkbenchCodeLanguage = "python" | "json";
 
@@ -45,7 +42,7 @@ export class WorkbenchCodeEditor {
         extensions: [
           basicSetup,
           languageExtension(options.language),
-          EditorView.theme({}, { dark: true }),
+          EditorView.theme({}),
           syntaxHighlighting(WORKBENCH_HIGHLIGHT),
           EditorState.tabSize.of(2),
           EditorView.cspNonce.of(CODEMIRROR_CSP_NONCE),

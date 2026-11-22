@@ -26,7 +26,7 @@ describe("task detail accessibility contract", () => {
       "desktop",
       "src",
       "renderer",
-      "task-coordination-inbox.css",
+      "v2.css",
     );
     expect(view).toContain(
       'id="task-coordination-load-older" class="button button-ghost" type="button" aria-controls="task-coordination-list" aria-describedby="task-coordination-history-status" hidden',
@@ -45,12 +45,10 @@ describe("task detail accessibility contract", () => {
     expect(list).not.toContain("aria-live");
     expect(list).not.toContain("aria-relevant");
     expect(list).not.toContain("aria-atomic");
-    expect(styles).toContain(
-      ".task-coordination-snapshot-status:empty {\n  margin: 0;\n}",
-    );
-    expect(styles).not.toContain(
-      ".task-coordination-snapshot-status:empty {\n  display: none;",
-    );
+    const statusRule = styles.match(/\.task-coordination-snapshot-status:empty[^{}]*\{([^}]*)\}/u)?.[1];
+    expect(statusRule).toBeDefined();
+    expect(statusRule).toMatch(/margin\s*:\s*0\s*(?:;|$)/u);
+    expect(statusRule).not.toMatch(/display\s*:\s*none/u);
   });
 
   it("exposes determinate and indeterminate progress semantics", () => {

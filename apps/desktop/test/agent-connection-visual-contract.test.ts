@@ -1,105 +1,47 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-
 import { describe, expect, it } from "vitest";
 
-function source(path: string): string {
-  return readFileSync(resolve(process.cwd(), path), "utf8");
+import { renderAgentView } from "../src/renderer/view-agent.js";
+import { renderOverviewView } from "../src/renderer/view-overview.js";
+
+function ids(html: string): string[] {
+  return [...html.matchAll(/\bid="([^"]+)"/gu)].map(match=>match[1]!);
 }
 
-function navigationIcon(shell: string, name: string): string {
-  const key = shell.indexOf(`${name}:`);
-  expect(key).toBeGreaterThanOrEqual(0);
-  const start = shell.indexOf("'", key);
-  const end = start < 0 ? -1 : shell.indexOf("'", start + 1);
-  expect(start).toBeGreaterThan(key);
-  expect(end).toBeGreaterThan(start);
-  return shell.slice(start + 1, end);
-}
-
-describe("ChatGPT connection visual contract", () => {
-  it("uses two visible status summaries and one advanced connection fold", () => {
-    const view = source("apps/desktop/src/renderer/view-agent.ts");
-
-    expect(view).toContain("agent-status-strip-compact");
-    expect(view).toContain("agent-status-strip-two");
-    expect(view).not.toContain("agent-status-item-redundant");
-    expect(view.match(/<div class="agent-status-item">/gu)).toHaveLength(2);
-    expect(view).toContain('class="visually-hidden" aria-live="polite"');
-    expect(view).toContain('id="web-session-badge"');
-    expect(view.match(/<details\b/gu)).toHaveLength(1);
-    expect(view).toContain(
-      '<details class="agent-connection-advanced agent-advanced">',
-    );
-    expect(view).not.toContain("Advanced proxy and routing");
-    expect(view).toContain("agent-local-connection-options");
-    expect(view).toContain('id="secure-tunnel-route-list"');
-    expect(view).toContain('id="web-agent-endpoint"');
-    expect(view).toContain('id="web-copy-connection"');
+describe("v2 connection information boundaries", () => {
+  it("keeps the first screen to two client cards and moves configuration into one named dialog", () => {
+    const home=renderOverviewView(), drawer=renderAgentView();
+    expect(home.match(/class="v2-connection-card /gu)).toHaveLength(2);
+    expect(home).toContain('id="v2-chatgpt-config"');
+    expect(home).toContain('id="v2-gemini-config"');
+    expect(home).not.toContain('<input');
+    expect(drawer).toContain('<dialog id="connection-drawer"');
+    expect(drawer).toContain('aria-labelledby="connection-drawer-title"');
+    expect(drawer).toContain('id="connection-drawer-close"');
+    for(const provider of ["chatgpt","gemini","advanced"]) expect(drawer).toContain('data-connection-panel="'+provider+'" hidden');
+    const all=ids(home+drawer);
+    expect(new Set(all).size).toBe(all.length);
+    expect(drawer).not.toContain('id="web-permission-profiles"');
   });
 
-  it("removes nested bands and keeps selection restrained with keyboard focus", () => {
-    const styles = source(
-      "apps/desktop/src/renderer/operate-shell-connection-polish.css",
-    );
-    const block = styles.slice(
-      styles.lastIndexOf("/* Operate connection view:"),
-    );
-
-    expect(block).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
-    expect(block).toMatch(
-      /:is\(\.agent-authority-section, \.agent-connect-section\)[\s\S]*?border: 0;[\s\S]*?background: transparent;/u,
-    );
-    expect(block).toMatch(
-      /#view-agent \.agent-field \{[\s\S]*?border: 0;[\s\S]*?background: transparent;/u,
-    );
-    expect(
-      [block, source("apps/desktop/src/renderer/ui-refinement.css")].join("\n"),
-    ).toContain("box-shadow: inset 0 -2px 0 var(--ui-state)");
-    expect(source("apps/desktop/src/renderer/ui-system.css")).toContain(
-      "button:focus-visible",
-    );
-    expect(
-      [block, source("apps/desktop/src/renderer/ui-system.css")].join("\n"),
-    ).toContain("outline: 2px solid");
-    expect(block).not.toContain("box-shadow: inset 2px 0 0");
-    expect(block).not.toContain("linear-gradient");
+  it("retains protected ChatGPT and Gemini fields without filling stored values", () => {
+    const drawer=renderAgentView();
+    for(const id of ["secure-tunnel-api-key","secure-tunnel-proxy","secure-tunnel-backup-proxy","gemini-owner-subject","gemini-introspection-authorization"]) {
+      const input=drawer.match(new RegExp('<input id="'+id+'"[^>]*>','u'))?.[0];
+      expect(input).toBeDefined();
+      expect(input).toContain('type="password"');
+      expect(input).not.toMatch(/\bvalue=/u);
+    }
+    for(const id of ["secure-tunnel-route-list","web-agent-endpoint","web-copy-connection","gemini-public-endpoint","gemini-listen-endpoint"]) expect(drawer).toContain('id="'+id+'"');
+    expect(drawer).toContain('id="gemini-save" form="gemini-config-form"');
+    expect(drawer).toContain('id="gemini-protected-dialog"');
+    for(const mode of ["keep","replace","forget"]) expect(drawer).toContain('data-secret-mode="'+mode+'"');
   });
 
-  it("keeps connection, Tasks, workflow, Terminal and Python icon semantics distinct", () => {
-    const shell = source("apps/desktop/src/renderer/shell.ts");
-    const connection = navigationIcon(shell, "connection");
-    const tasks = navigationIcon(shell, "tasks");
-    const workflow = navigationIcon(shell, "workflow");
-    const terminal = navigationIcon(shell, "terminal");
-    const python = navigationIcon(shell, "python");
-
-    expect(connection).not.toContain("M3.25 3.25h9.5v7h-5");
-    expect(connection).toContain("M6.15 5.15");
-    expect(tasks).not.toBe(workflow);
-    expect(tasks).toContain("m4.25 5.25");
-    expect(terminal).not.toBe(python);
-    expect(python).toContain('circle cx="7.1"');
-    expect(shell).toContain('class="statusbar-local-icon"');
-    expect(shell).not.toContain('class="status-dot is-local"');
-  });
-
-  it("keeps sidebar selection on a compact rail without a full-row tint or glow", () => {
-    const styles = source(
-      "apps/desktop/src/renderer/operate-shell-connection-polish.css",
-    );
-    const block = styles.slice(
-      styles.lastIndexOf(
-        "/* Operate shell navigation: keep selection local to its rail and icon. */",
-      ),
-    );
-
-    expect(block).toMatch(
-      /navigation-item:is\([\s\S]*?background: transparent;[\s\S]*?box-shadow: none;/u,
-    );
-    expect(block).toContain("width: 2px");
-    expect(block).toContain("left: 0");
-    expect(block).toContain("color: var(--ui-accent)");
-    expect(block).not.toContain("0 0 12px");
+  it("offers preview and cancellation before import or protected changes reach Save", () => {
+    const drawer=renderAgentView();
+    for(const id of ["gemini-import-json","gemini-import-preview","gemini-import-fields","gemini-import-error","gemini-import-apply","gemini-import-cancel","gemini-preset-example","gemini-preset-manual","gemini-preset-cancel","gemini-protected-apply","gemini-protected-cancel"]) expect(drawer).toContain('id="'+id+'"');
+    expect(drawer).toMatch(/id="gemini-import-apply"[^>]*disabled/u);
+    expect(drawer).toContain('Protected values stay unchanged.');
+    expect(drawer).toContain('Saved values are never displayed.');
   });
 });

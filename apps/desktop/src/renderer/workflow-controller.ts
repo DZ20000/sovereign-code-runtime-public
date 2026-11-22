@@ -1,3 +1,4 @@
+import { renderWorkflowStep, workflowStepSummary } from "./workflow-step-presentation.js";
 import type {
   DesktopRunRecord,
   DesktopWorkflowStep,
@@ -107,19 +108,6 @@ function defaultStep(kind: DesktopWorkflowStep["kind"]): DesktopWorkflowStep {
   return { kind: "python", code: "print(\"workflow step\")" };
 }
 
-function stepAuthority(step: DesktopWorkflowStep): "L2" | "L3" {
-  return step.kind === "validation" ? "L2" : "L3";
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
 const INITIAL_STEPS: DesktopWorkflowStep[] = [
   { kind: "validation", task: "typecheck" },
   { kind: "validation", task: "test" },
@@ -146,7 +134,10 @@ export class WorkflowController {
 
   mount(): void {
     requiredElement<HTMLButtonElement>("#workflow-undo").addEventListener("click", () => this.#undoChange());
-    requiredElement<HTMLInputElement>("#workflow-label").addEventListener("input", () => this.#clearUndo());
+    requiredElement<HTMLInputElement>("#workflow-label").addEventListener("input", () => {
+      this.#clearUndo();
+      this.#renderTemplateSelection();
+    });
     const addMenu = requiredElement<HTMLDetailsElement>(".workflow-add-menu");
     addMenu.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && addMenu.open) {
@@ -413,6 +404,8 @@ export class WorkflowController {
     }
     if (renderBuilder) {
       this.#renderBuilder(focus);
+    } else {
+      this.#renderStepSummaries();
     }
     this.#renderValidation();
   }
@@ -462,47 +455,33 @@ export class WorkflowController {
 
   #renderBuilder(focus: BuilderFocus | null = this.#currentBuilderFocus()): void {
     const container = requiredElement<HTMLDivElement>("#workflow-step-builder");
-    container.innerHTML = this.#steps.map((step, index) => {
-      const controls = step.kind === "validation"
-        ? `<label><span>Task</span><select class="settings-select" data-workflow-step-index="${index}" data-workflow-step-field="task">
-            <option value="typecheck"${step.task === "typecheck" ? " selected" : ""}>Typecheck</option>
-            <option value="test"${step.task === "test" ? " selected" : ""}>Tests</option>
-            <option value="build"${step.task === "build" ? " selected" : ""}>Build</option>
-          </select></label>`
-        : step.kind === "terminal"
-          ? `<label class="workflow-step-wide"><span>Command</span><input class="text-field" data-workflow-step-index="${index}" data-workflow-step-field="command" value="${escapeHtml(step.command)}" /></label>`
-          : `<label class="workflow-step-wide"><span>Python code</span><textarea class="workflow-step-code" data-workflow-step-index="${index}" data-workflow-step-field="code">${escapeHtml(step.code)}</textarea></label>`;
-      return `
-        <article class="workflow-step-row">
-          <div class="workflow-step-index">${index + 1}</div>
-          <div class="workflow-step-body">
-            <div class="workflow-step-topline">
-              <select class="workflow-kind-select" data-workflow-step-index="${index}" data-workflow-step-field="kind" aria-label="Step ${index + 1} kind">
-                <option value="validation"${step.kind === "validation" ? " selected" : ""}>Validation</option>
-                <option value="terminal"${step.kind === "terminal" ? " selected" : ""}>Terminal</option>
-                <option value="python"${step.kind === "python" ? " selected" : ""}>Python</option>
-              </select>
-              <span class="workflow-step-authority authority-${stepAuthority(step).toLowerCase()}">${stepAuthority(step)}</span>
-              <div class="workflow-step-actions">
-                <button type="button" data-workflow-step-index="${index}" data-workflow-step-action="up" aria-label="Move step up"${index === 0 ? " disabled" : ""}>↑</button>
-                <button type="button" data-workflow-step-index="${index}" data-workflow-step-action="down" aria-label="Move step down"${index === this.#steps.length - 1 ? " disabled" : ""}>↓</button>
-                <button type="button" data-workflow-step-index="${index}" data-workflow-step-action="remove" aria-label="Remove step">×</button>
-              </div>
-            </div>
-            <div class="workflow-step-controls">${controls}</div>
-          </div>
-        </article>
-      `;
-    }).join("");
+    const expanded = new Set([...container.querySelectorAll<HTMLDetailsElement>(".v2-workflow-step[open]")]
+      .map(details => Number(details.dataset.workflowStepIndex)));
+    if (focus?.field !== undefined) expanded.add(Math.min(focus.index, this.#steps.length - 1));
+    container.innerHTML = this.#steps.map((step, index) =>
+      renderWorkflowStep(step, index, this.#steps.length, expanded.has(index))).join("");
     if (focus !== null) {
       const index = Math.min(focus.index, this.#steps.length - 1);
       const base = `[data-workflow-step-index="${index}"]`;
       const control = focus.field !== undefined
         ? `${base}[data-workflow-step-field="${focus.field}"]`
         : `${base}[data-workflow-step-action="${focus.action}"]:not(:disabled)`;
-      (container.querySelector<HTMLElement>(control) ??
-        container.querySelector<HTMLElement>(`${base}[data-workflow-step-field="kind"]`))?.focus({ preventScroll: true });
+      const target = container.querySelector<HTMLElement>(control) ??
+        container.querySelector<HTMLElement>(`${base}[data-workflow-step-field="kind"]`);
+      target?.closest<HTMLDetailsElement>(".v2-workflow-step")?.setAttribute("open", "");
+      target?.focus({ preventScroll: true });
     }
+  }
+
+  #renderStepSummaries(): void {
+    const container = requiredElement<HTMLDivElement>("#workflow-step-builder");
+    this.#steps.forEach((step, index) => {
+      const summary = workflowStepSummary(step);
+      const title = container.querySelector<HTMLElement>(`[data-workflow-step-title="${index}"]`);
+      const detail = container.querySelector<HTMLElement>(`[data-workflow-step-detail="${index}"]`);
+      if (title !== null) title.textContent = summary.title;
+      if (detail !== null) detail.textContent = summary.detail;
+    });
   }
 
   #renderValidation(): void {
@@ -524,6 +503,7 @@ export class WorkflowController {
     }
     this.#setRunButtonsDisabled(this.#validationError !== null);
     this.#renderImpact();
+    this.#renderTemplateSelection();
   }
 
   #renderImpact(): void {
@@ -570,6 +550,17 @@ export class WorkflowController {
       kinds.textContent = template.steps.map((step) => step.kind).join(" → ");
       button.append(title, detail, kinds);
       container.append(button);
+    }
+    this.#renderTemplateSelection();
+  }
+
+  #renderTemplateSelection(): void {
+    const label = requiredElement<HTMLInputElement>("#workflow-label").value;
+    for (const button of document.querySelectorAll<HTMLButtonElement>("[data-workflow-template-id]")) {
+      const template = this.#templates.find(candidate => candidate.id === button.dataset.workflowTemplateId);
+      const selected = template?.label === label && JSON.stringify(template.steps) === JSON.stringify(this.#steps);
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-pressed", String(selected));
     }
   }
 }

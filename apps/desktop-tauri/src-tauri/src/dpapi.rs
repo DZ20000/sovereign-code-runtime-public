@@ -75,3 +75,36 @@ pub fn unprotect_string(encoded: &str) -> Result<String, String> {
         Ok(value)
     }
 }
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    use super::{protect_string, unprotect_string};
+
+    #[test]
+    fn short_gemini_subject_envelope_roundtrips_with_exact_value() {
+        let payload = serde_json::json!({
+            "schemaVersion": "scr.gemini-protected-value/v1",
+            "purpose": "ownerSubject",
+            "value": " user-1 "
+        })
+        .to_string();
+
+        let encrypted = protect_string(&payload).expect("protect test envelope");
+        let restored = unprotect_string(&encrypted).expect("restore test envelope");
+        assert_eq!(restored, payload);
+        let envelope: serde_json::Value =
+            serde_json::from_str(&restored).expect("parse test envelope");
+        assert_eq!(envelope["schemaVersion"], "scr.gemini-protected-value/v1");
+        assert_eq!(envelope["purpose"], "ownerSubject");
+        assert_eq!(envelope["value"], " user-1 ");
+    }
+
+    #[test]
+    fn short_plain_runtime_key_remains_rejected_after_decryption() {
+        let encrypted = protect_string("short").expect("protect short test value");
+        assert_eq!(
+            unprotect_string(&encrypted),
+            Err("Windows DPAPI restored an invalid runtime key.".to_string())
+        );
+    }
+}

@@ -33,6 +33,8 @@ export async function verifyTaskHub(window: BrowserWindow): Promise<Readonly<Rec
         return await waitFor(() => button.getAttribute('aria-pressed') === 'true' && projectCards().length === projectCount &&
           taskCards().length === taskCount && taskCards().every((card) => expected.includes(card.dataset.taskId)));
       };
+      const projectChooser=document.querySelector('.v2-task-project-chooser');
+      if(projectChooser instanceof HTMLDetailsElement) projectChooser.open=true;
       const projectSelect = document.querySelector('#task-project-select');
       const projectFilterOptions = () => Array.from(projectSelect?.options ?? []);
       const projectFilterOption = (projectId) => projectFilterOptions().find((option) => option.value === projectId);
@@ -122,6 +124,7 @@ export async function verifyTaskHub(window: BrowserWindow): Promise<Readonly<Rec
         taskCards().length === 2
       );
       const projectFilterNavigation = projectFilterInitial && singleProjectFilter && projectSelectFocusRetained && projectFilterRestored;
+      if(projectChooser instanceof HTMLDetailsElement) projectChooser.open=false;
       const currentSelected = await selectLane('current', 1, 2);
       const firstProject = projectCards()[0];
       let firstTask = document.querySelector('#task-project-grid [data-task-id="task-visual-agent-hub"]');
@@ -164,9 +167,9 @@ export async function verifyTaskHub(window: BrowserWindow): Promise<Readonly<Rec
       const projectBlocks =
         firstProject.querySelector('h3')?.textContent?.trim() === 'Sovereign Code Runtime' &&
         firstProjectHeight >= 120 &&
-        firstProjectWidth >= 240 &&
+        firstProjectWidth >= 180 &&
         firstProjectRect.right <= document.querySelector('#task-hub-list-pane').getBoundingClientRect().right + 1 &&
-        firstProjectDisplay === 'block' &&
+        firstProjectDisplay !== 'none' &&
         summary.textContent?.includes('2 current') === true &&
         summary.textContent?.includes('1 need action') === true &&
         summary.textContent?.includes('0 history') === true;
@@ -185,11 +188,12 @@ export async function verifyTaskHub(window: BrowserWindow): Promise<Readonly<Rec
         const cardRect = card.getBoundingClientRect();
         const text = ['.task-summary-header strong', '.task-summary-current'].map((selector) => {
           const element = card.querySelector(selector), style = getComputedStyle(element);
-          return { fontSize: Number.parseFloat(style.fontSize), lineHeight: Number.parseFloat(style.lineHeight),
-            clamp: style.webkitLineClamp, height: element.getBoundingClientRect().height };
+          return { visible:element.checkVisibility(),fontSize:Number.parseFloat(style.fontSize),lineHeight:Number.parseFloat(style.lineHeight),
+            clamp:style.webkitLineClamp,height:element.getBoundingClientRect().height };
         });
         return { text, contentContained: ['.task-summary-header', '.task-summary-current', '.task-summary-progress', '.task-summary-footer'].every((selector) => {
-          const rect = card.querySelector(selector).getBoundingClientRect();
+          const element=card.querySelector(selector); if(!element.checkVisibility()) return true;
+          const rect = element.getBoundingClientRect();
           return rect.height > 0 && rect.top >= cardRect.top && rect.bottom <= cardRect.bottom + 1 && rect.right <= cardRect.right + 1;
         }) };
       });
@@ -198,16 +202,16 @@ export async function verifyTaskHub(window: BrowserWindow): Promise<Readonly<Rec
         Math.abs(currentCardRects[0].width - currentCardRects[1].width) < 1 &&
         currentCardRects[1].top >= currentCardRects[0].bottom - 1 &&
         readableRows.every((row) => row.contentContained && row.text.every((text) =>
-          text.fontSize >= 14 && text.lineHeight >= text.fontSize * 1.4 && text.clamp === '2' && text.height <= text.lineHeight * 2 + 1)) &&
+          !text.visible || (text.fontSize >= 12 && text.lineHeight >= text.fontSize * 1.25 && text.height <= text.lineHeight * 2 + 1))) &&
         currentCardStyles.every(
-          (style) => style.borderRadius === '0px' && style.boxShadow === 'none',
+          (style) => style.boxShadow === 'none',
         ) &&
         currentCards.every(
           (card) =>
             getComputedStyle(card.querySelector('.task-summary-reliability')).display ===
             'none',
         ) &&
-        currentTitles.every((title, index) => title instanceof HTMLElement &&
+        currentTitles.every((title, index) => title instanceof HTMLElement && title.checkVisibility() &&
           currentCards[index].getAttribute('aria-label')?.includes(title.textContent)) &&
         currentFooters.every(
           (footer) =>
@@ -429,7 +433,7 @@ export async function verifyTaskHub(window: BrowserWindow): Promise<Readonly<Rec
       const refreshButton = document.querySelector('#task-hub-refresh');
       const stepsContainer = document.querySelector('#task-detail-steps');
       const messageList = document.querySelector('#task-message-list');
-      const currentWorkCard = document.querySelector('.task-current-work-card');
+      const currentWorkCard = document.querySelector('.v2-task-progress');
       if (
         !(refreshButton instanceof HTMLButtonElement) ||
         !(stepsContainer instanceof HTMLElement) ||

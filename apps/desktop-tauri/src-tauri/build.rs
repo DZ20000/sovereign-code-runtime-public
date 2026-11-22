@@ -59,6 +59,7 @@ fn main() {
             "copy_connection_bundle",
             "approval_current",
             "approval_resolve",
+            "approval_dismiss",
         ]),
     ))
     .expect("failed to build Sovereign Tauri command permissions");

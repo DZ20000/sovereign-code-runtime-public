@@ -1,3 +1,4 @@
+import { V2_PHRASES } from "./v2-localization.js";
 import { PHRASES } from "./localization-messages.js";
 import {
   translateTaskBoardPattern,
@@ -5,7 +6,7 @@ import {
 
 export type UiLanguage = "en" | "zh-CN";
 
-const EN_TO_ZH = new Map<string, string>(PHRASES);
+const EN_TO_ZH = new Map<string, string>([...PHRASES, ...V2_PHRASES]);
 const LOCALIZABLE_ATTRIBUTES = ["title", "aria-label", "placeholder"] as const;
 type LocalizableAttribute = (typeof LOCALIZABLE_ATTRIBUTES)[number];
 
@@ -23,9 +24,15 @@ const USER_TEXT_SELECTOR = `${SKIP_SELECTOR}, textarea, [contenteditable]:not([c
 
 function translatePattern(value: string): string {
   const patterns: readonly (readonly [RegExp, (...matches: string[]) => string])[] = [
+    [/^(CPython|PyPy|Python)(?: ([0-9][A-Za-z0-9.+-]*))?\s+available$/u, (_all, implementation, version) => `${implementation}${version === undefined ? "" : ` ${version}`} 可用`],
+    [/^Python run (pending|queued|running|cancelling|succeeded|failed|cancelled|timed-out|interrupted|skipped|denied)$/u, (_all, state) => `Python 执行 · ${EN_TO_ZH.get(state) ?? state}`],
+    [/^(\d+)×(\d+) desktop$/u, (_all, width, height) => `${width}×${height} 桌面`],
+    [/^(\d+) pending approvals$/u, (_all, count) => `${count} 个待审批请求`],
+    [/^(.+) enabled for connected AI sessions\\.$/u, (_all, level) => `${EN_TO_ZH.get(level) ?? level}已对已连接的 AI 会话启用。`],
     [/^Allow connected web agent to run (.+)\?$/u, (_all, action) => `允许已连接的网页 Agent 执行 ${action} 吗？`],
     [/^L3 Consequential · (.+)$/u, (_all, detail) => `L3 高影响 · ${detail}`],
     [/^Step (\d+) kind$/u, (_all, step) => `步骤 ${step} 类型`],
+    [/^Edit step (\d+)$/u, (_all, step) => `编辑步骤 ${step}`],
     [/^(\d+) trusted keys?$/u, (_all, count) => `${count} 个可信密钥`],
     [/^(\d+) installed · (\d+) in inbox · highest accepted sequence #(\d+)\. Last failure: (.+)$/u, (_all, installed, inbox, sequence, failure) => `${installed} 个已安装 · ${inbox} 个在收件箱 · 已接受的最高序列号 #${sequence}。最近失败：${failure}`],
     [/^(\d+) installed · (\d+) in inbox · highest accepted sequence #(\d+)\. Install a signed inbox release, then activate the verified immutable slot\.$/u, (_all, installed, inbox, sequence) => `${installed} 个已安装 · ${inbox} 个在收件箱 · 已接受的最高序列号 #${sequence}。先安装收件箱中的已签名版本，再激活经过验证的不可变槽位。`],
@@ -69,7 +76,7 @@ function translatePattern(value: string): string {
     [/^Connected · (\d+) sessions?$/u, (_all, count) => `已连接 · ${count} 个会话`],
     [/^(\d+) active (?:runs?|tasks?)$/u, (_all, count) => `${count} 个活动任务`],
     [/^Web Agent connected · (\d+)$/u, (_all, count) => `网页 Agent 已连接 · ${count}`],
-    [/^ChatGPT connected · (\d+)$/u, (_all, count) => `ChatGPT 已连接 · ${count}`],
+    [/^Active MCP sessions · (\d+)$/u, (_all, count) => `活动 MCP 会话 · ${count}`],
     [/^Generation (\d+) · active$/u, (_all, generation) => `第 ${generation} 代 · 有效`],
     [/^(\d+) primitives? missing$/u, (_all, count) => `缺少 ${count} 项基础能力`],
     [/^Workspace: (.+)$/u, (_all, workspace) => `工作区：${workspace}`],
@@ -87,11 +94,11 @@ function translatePattern(value: string): string {
     [/^(.+) · (\d+) switches?(?: · last (.+))?\.$/u, (_all, route, count, timestamp) => `${EN_TO_ZH.get(route) ?? translatePattern(route)} · 已切换 ${count} 次${timestamp === undefined ? "" : ` · 最近一次 ${timestamp}`}。`],
     [/^(Primary proxy|Backup proxy|Direct fallback) · (.+)$/u, (_all, route, target) => `${EN_TO_ZH.get(route) ?? route} · ${target}`],
     [/^Saved bridge · (.+)$/u, (_all, target) => `已保存网桥 · ${target}`],
-    [/^Fallback ChatGPT bundle target · (.+)$/u, (_all, target) => `备用 ChatGPT 连接包目标 · ${target}`],
+    [/^Fallback MCP bundle target · (.+)$/u, (_all, target) => `备用 MCP 连接包目标 · ${target}`],
     [/^Without confirmation is active\. Switching levels returns to (.+)\.$/u, (_all, profile) => `免确认已启用。切换级别后恢复为 ${EN_TO_ZH.get(profile) ?? profile}。`],
     [/^Without confirmation is active\. Select to return to (.+)\.$/u, (_all, profile) => `免确认已启用。选择后恢复为 ${EN_TO_ZH.get(profile) ?? profile}。`],
-    [/^(.+) · Open ChatGPT Connection$/u, (_all, status) => `${EN_TO_ZH.get(status) ?? translatePattern(status)} · 打开 ChatGPT 连接`],
-    [/^(.+) · Change ChatGPT permission$/u, (_all, profile) => `${EN_TO_ZH.get(profile) ?? translatePattern(profile)} · 更改 ChatGPT 权限`],
+    [/^(.+) · Open AI Connections$/u, (_all, status) => `${EN_TO_ZH.get(status) ?? translatePattern(status)} · 打开 AI 连接`],
+    [/^(.+) · Change AI permissions$/u, (_all, profile) => `${EN_TO_ZH.get(profile) ?? translatePattern(profile)} · 更改 AI 权限`],
     [/^Confirmation bypass is active · L4 · Revoke returns to (.+)\.$/u, (_all, profile) => `免确认模式已启用 · L4 · 撤销后恢复为 ${EN_TO_ZH.get(profile) ?? profile}。`],
     [/^Revoke L4 and return to (.+)$/u, (_all, profile) => `撤销 L4 并恢复为 ${EN_TO_ZH.get(profile) ?? profile}`],
     [/^Workspace restore (enabled|disabled) · L4 remains active · revoke fallback is (.+)\.$/u, (_all, action, profile) => `工作区恢复已${action === "enabled" ? "启用" : "关闭"} · L4 仍然生效 · 撤销后回退为 ${EN_TO_ZH.get(profile) ?? profile}。`],

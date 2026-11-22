@@ -12,8 +12,8 @@ function styles(file: string): string {
 
 describe("task summary visual contract", () => {
   it("keeps the current-work summary bounded to two readable lines", () => {
-    const rule = styles("task-board.css").match(
-      /\.task-summary-current\s*\{[^}]+\}/u,
+    const rule = styles("v2.css").match(
+      /\.task-summary-current[^{}]*\{[^}]+\}/u,
     )?.[0];
     expect(rule).toBeDefined();
     expect(rule).toMatch(/overflow\s*:\s*hidden\s*[;}]/u);
@@ -36,34 +36,29 @@ describe("task summary visual contract", () => {
     expect(back).toContain('aria-label="Back to task list"');
   });
 
-  it("opens steps and details as native popovers with matching close actions", () => {
+  it("keeps three accessible task tabs, one Runs workbench and a native Details dialog", () => {
     const view = renderTasksView();
-    const buttons = view.match(/<button\b[^>]*>/gu) ?? [];
-
-    for (const kind of ["steps", "info"]) {
-      const target = `task-${kind}-popover`;
-      const trigger = buttons.find((button) =>
-        button.includes(`id="task-${kind}-toggle"`),
-      );
-      const panel = view.match(
-        new RegExp(`<[^>]+\\bid="${target}"[^>]*>`, "u"),
-      )?.[0];
-
-      expect(trigger).toContain(`popovertarget="${target}"`);
-      expect(panel).toContain('popover="auto"');
-      expect(panel).toContain('role="dialog"');
-      expect(
-        buttons.some(
-          (button) =>
-            button.includes(`popovertarget="${target}"`) &&
-            button.includes('popovertargetaction="hide"'),
-        ),
-      ).toBe(true);
+    for (const kind of ["conversation", "steps", "output"]) {
+      const trigger = view.match(new RegExp(`<button[^>]+id="task-tab-${kind}"[^>]*>`))?.[0];
+      const panel = view.match(new RegExp(`<section[^>]+id="task-panel-${kind}"[^>]*>`))?.[0];
+      expect(trigger).toContain('role="tab"');
+      expect(trigger).toContain(`aria-controls="task-panel-${kind}"`);
+      expect(panel).toContain('role="tabpanel"');
+      expect(panel).toContain(`aria-labelledby="task-tab-${kind}"`);
     }
+    expect(view.match(/id="runs-workbench-root"/gu)).toHaveLength(1);
+    expect(view).toContain('id="task-show-all-runs"');
+    expect(view).toContain('id="task-history-back"');
+    expect(view).not.toContain('id="runs-pane-audit"');
+    expect(view).not.toContain('id="task-steps-popover"');
+    expect(view).toContain('popovertarget="task-info-popover"');
+    expect(view.match(/<div[^>]+id="task-info-popover"[^>]*>/u)?.[0]).toContain('popover="auto"');
+    const ids = [...view.matchAll(/ id="([^"]+)"/gu)].map((match) => match[1]);
+    expect(ids.length).toBeGreaterThan(50);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it("uses existing task snapshots for transient project filtering", () => {
-    const board = styles("task-board.css");
     const controller = styles("tasks-controller.ts");
     const session = styles("task-hub-session.ts");
     const view = styles("view-tasks.ts");
@@ -78,7 +73,6 @@ describe("task summary visual contract", () => {
     expect(projectFilter).not.toContain("sessionStorage");
     expect(projectFilter).not.toContain("localStorage");
     expect(session).not.toContain("selectedProjectFilterId");
-    expect(board).toContain(".task-project-filter");
   });
 
   it("opens a canonical task project through the existing terminal flow", () => {
@@ -97,7 +91,7 @@ describe("task summary visual contract", () => {
   });
 
   it("keeps durable success compact and resets the real scroller for all records", () => {
-    const board = styles("task-board.css");
+    const board = styles("v2.css");
     const controller = styles("tasks-controller.ts");
 
     expect(controller).toContain(
@@ -109,6 +103,5 @@ describe("task summary visual contract", () => {
     expect(controller).toContain(
       'requiredElement<HTMLElement>("#task-project-grid").scrollTop = 0',
     );
-    expect(board).toContain(".task-summary-card-compact-success");
   });
 });

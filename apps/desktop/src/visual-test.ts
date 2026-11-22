@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -17,12 +17,22 @@ import { verifyTaskWorkbench } from "./visual-task-workbench-verification.js";
 import { verifyProjectWorkspace } from "./visual-project-workspace-verification.js";
 import { verifyOverviewActivity } from "./visual-overview-verification.js";
 import { verifyAgentConnectionSurface } from "./visual-agent-verification.js";
+import { registerGeminiConnectionFixture } from "./visual-gemini-fixture.js";
+import { verifyGeminiConnection } from "./visual-gemini-verification.js";
 import { verifySharedControls } from "./visual-shared-controls-verification.js";
 import { verifyWorkbenchInteractions } from "./visual-interaction-verification.js";
+import { registerApprovalFixture } from "./visual-approval-fixture.js";
+import { verifyApprovalWindows } from "./visual-approval-verification.js";
+import { verifyHistorySurfaces } from "./visual-history-verification.js";
+import { verifyPermissionLifecycle } from "./visual-permission-verification.js";
+import { applyVisualContext, captureV2VisualMatrix, verifyInitialV2Navigation, type VisualMatrixCapture } from "./visual-matrix-verification.js";
+import { visualScreenshotPath, VISUAL_MATRIX } from "./visual-matrix.js";
+import { createVisualPreviewFixtures } from "./visual-preview-fixture.js";
+import { activateVisualView } from "./visual-navigation.js";
+import { validateVisualWorkspace } from "../scripts/visual-workspace.mjs";
 
 import {
   IPC_CHANNELS,
-  type DesktopApprovalView,
   type DesktopAuditReceipt,
   type DesktopBrowserObservation,
   type DesktopBrowserSession,
@@ -56,12 +66,9 @@ const currentFile = fileURLToPath(import.meta.url);
 const currentDirectory = dirname(currentFile);
 const RENDERER_SCHEME = "scr-app";
 const RENDERER_ORIGIN = `${RENDERER_SCHEME}://app/`;
-const OUTPUT_ROOT = resolve(
-  process.env.SCR_VISUAL_OUTPUT?.trim() || join(currentDirectory, "..", "..", "visual-artifacts"),
-);
-const USER_DATA_ROOT = resolve(
-  process.env.SCR_VISUAL_USER_DATA?.trim() || join(OUTPUT_ROOT, `user-data-${process.pid}`),
-);
+const visualWorkspace = validateVisualWorkspace(resolve(currentDirectory, "../../../.."), process.env);
+const OUTPUT_ROOT = visualWorkspace.outputRoot;
+const USER_DATA_ROOT = visualWorkspace.userDataRoot;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -110,7 +117,7 @@ const capabilities = [
 
 let state: DesktopRuntimeState = {
   phase: "running",
-  runtimeVersion: "0.1.0",
+  runtimeVersion: "0.1.7",
   workspaceRoot: "C:\\Projects\\sovereign-code-runtime",
   endpoint: "http://127.0.0.1:3210/mcp",
   manifestDigest: "4cdb99fe640dd4930c923070b63baa79016dad0c1bc4024cb642adc21ee2245c",
@@ -301,20 +308,9 @@ let visualHostStartup: DesktopHostStartupState = {
   },
 };
 
-const visualApproval: DesktopApprovalView = {
-  id: "approval-visual-001",
-  toolName: "terminal.start",
-  title: "L3 Consequential · ChatGPT Web",
-  message: "Allow connected web agent to run terminal.start?",
-  detail: "Starts one approved PowerShell command.\n\nThis approval covers exactly this external tool call and expires after 30 seconds.\n\n{\n  \"command\": \"pnpm typecheck\"\n}",
-  requestedAt: "2026-08-11T14:00:00.000Z",
-  expiresAt: "2099-08-11T14:00:30.000Z",
-  burstDetected: false,
-};
-
 const manifest: DesktopManifestView = {
   schemaVersion: "scr.tools/v1",
-  runtimeVersion: "0.1.0",
+  runtimeVersion: "0.1.7",
   generatedAt: "2026-08-10T08:00:00.000Z",
   digest: state.manifestDigest ?? "",
   tools: [
@@ -737,7 +733,7 @@ const auditReceipts: readonly DesktopAuditReceipt[] = [
     operation: "replace",
     outcome: "succeeded",
     workspaceId: "desktop-workspace",
-    relativePath: "apps/desktop/src/renderer/styles.css",
+    relativePath: "apps/desktop/src/renderer/v2.css",
     beforeSha256: "a".repeat(64),
     afterSha256: "b".repeat(64),
     errorCode: null,
@@ -1303,6 +1299,7 @@ let visualTerminalSession: DesktopTerminalSession = {
 let visualCreatedTerminal: DesktopTerminalSession | null = null;
 let visualLastPythonCode = "";
 const visualTerminalRequests: { readonly workspaceId: string; readonly root: string; readonly cwd: string }[] = [];
+let visualPythonStartCount = 0;
 
 const visualPythonCapabilities: DesktopPythonCapabilities = {
   available: true,
@@ -1325,7 +1322,10 @@ const visualBrowserSession: DesktopBrowserSession = {
   error: null,
 };
 
-const visualBrowserObservation: DesktopBrowserObservation = {
+let visualBrowserOperationCount = 0;
+let visualComputerObserveCount = 0;
+
+let visualBrowserObservation: DesktopBrowserObservation = {
   ...visualBrowserSession,
   revision: "b".repeat(64),
   text: "Example Domain\nThis domain is for use in illustrative examples in documents.",
@@ -1375,7 +1375,7 @@ const visualBrowserObservation: DesktopBrowserObservation = {
   ],
 };
 
-const visualComputerObservation: DesktopComputerObservation = {
+let visualComputerObservation: DesktopComputerObservation = {
   revision: "c".repeat(64),
   capturedAt: "2026-08-10T08:03:00.000Z",
   virtualScreen: { x: 0, y: 0, width: 1920, height: 1080 },
@@ -1400,6 +1400,10 @@ const visualComputerObservation: DesktopComputerObservation = {
 
 interface ScreenshotRecord {
   readonly viewport: string;
+  readonly language: string;
+  readonly theme: string;
+  readonly mode: "full" | "simple";
+  readonly zoom: 1;
   readonly view: string;
   readonly relativePath: string;
   readonly width: number;
@@ -1419,9 +1423,11 @@ interface VisualIssue {
 }
 
 interface VisualReport {
-  readonly verificationScope: "tasks" | "all";
+  readonly verificationScope: "tasks" | "all" | "checks" | "workbench";
   readonly functionalErrors: readonly string[];
-  readonly schemaVersion: "scr.visual-test/v1";
+  readonly schemaVersion: "scr.visual-test/v2";
+  readonly verificationStatus: "matrix-only" | "checks-only" | "complete";
+  readonly contexts: typeof VISUAL_MATRIX;
   readonly generatedAt: string;
   readonly outputRoot: string;
   readonly screenshots: readonly ScreenshotRecord[];
@@ -1520,6 +1526,8 @@ function setVisualProjectPermission(profile: DesktopPermissionProfile, workspace
 }
 
 function registerMockIpc(): void {
+  registerGeminiConnectionFixture();
+  registerApprovalFixture();
   ipcMain.handle(IPC_CHANNELS.readProjectWorkspaces, (_event, projectId: unknown) => visualProjectWorkspaceSnapshot(projectId));
   ipcMain.handle(IPC_CHANNELS.selectProjectWorkspace, (_event, projectId: unknown, workspaceId: unknown) => selectVisualProjectWorkspace(projectId, workspaceId));
   ipcMain.handle(IPC_CHANNELS.chooseProjectWorkspace, (_event, projectId: unknown) => {
@@ -1627,6 +1635,12 @@ function registerMockIpc(): void {
         return { updated: true };
       case "visual.fixture.last-python-code":
         return visualLastPythonCode;
+      case "visual.fixture.python-start-count":
+        return visualPythonStartCount;
+      case "visual.fixture.browser-operation-count":
+        return visualBrowserOperationCount;
+      case "visual.fixture.computer-observe-count":
+        return visualComputerObserveCount;
       case "terminal.session.list":
         return visualCreatedTerminal === null ? [visualTerminalSession] : [visualTerminalSession, visualCreatedTerminal];
       case "terminal.session.read":
@@ -1642,6 +1656,7 @@ function registerMockIpc(): void {
       case "python.capabilities":
         return visualPythonCapabilities;
       case "python.start": {
+        visualPythonStartCount += 1;
         visualLastPythonCode = String(input.code);
         const run = runRecords.find((candidate) => candidate.kind === "python");
         if (!run) throw new Error("Python visual fixture is unavailable.");
@@ -1662,6 +1677,7 @@ function registerMockIpc(): void {
       case "browser.navigate":
       case "browser.click":
       case "browser.type":
+        visualBrowserOperationCount += 1;
         return visualBrowserObservation;
       case "workflow.templates":
         return [
@@ -1690,6 +1706,8 @@ function registerMockIpc(): void {
           operations: ["focus_window", "click", "type_text", "press_key", "launch_application"],
         };
       case "computer.observe":
+        visualComputerObserveCount += 1;
+        return visualComputerObservation;
       case "computer.action":
         return visualComputerObservation;
       default:
@@ -1860,15 +1878,6 @@ function registerMockIpc(): void {
     return state;
   });
   ipcMain.handle(IPC_CHANNELS.refreshSecureTunnel, () => state);
-  ipcMain.handle(IPC_CHANNELS.approvalGetCurrent, () => visualApproval);
-  ipcMain.handle(IPC_CHANNELS.approvalResolve, (_event, requestId: unknown, decision: unknown) => {
-    if (requestId !== visualApproval.id) {
-      throw new Error("Visual approval request id mismatch.");
-    }
-    if (decision !== "allow-once" && decision !== "deny" && decision !== "drop-to-l1") {
-      throw new Error("Invalid visual approval decision.");
-    }
-  });
   ipcMain.handle(IPC_CHANNELS.setUiScale, (event, scale: unknown) => {
     if (scale !== 1 && scale !== 1.1 && scale !== 1.25 && scale !== 1.5) {
       throw new Error("Invalid visual-test UI scale.");
@@ -1884,7 +1893,7 @@ async function waitForRenderer(
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     const ready = await window.webContents.executeJavaScript(
-      `Boolean(document.querySelector(".application-shell") && document.querySelector("#global-status-label")?.textContent === "Running" && document.querySelectorAll(".manifest-group").length >= 1)`,
+      `Boolean(document.querySelector(".application-shell") && document.querySelector("#v2-chatgpt-config") && document.querySelector("#gemini-status")?.textContent !== "Checking…" && document.querySelectorAll("#home-active-work-carousel .active-work-line").length >= 2)`,
       true,
     ) as boolean;
     if (ready) {
@@ -1913,1499 +1922,32 @@ async function waitForRenderer(
   );
 }
 
-async function verifyInterfacePreferences(window: BrowserWindow): Promise<void> {
-  const result = await window.webContents.executeJavaScript(
-    `(async () => {
-      const language = document.querySelector('#ui-language');
-      const mode = document.querySelector('#ui-experience-mode');
-      const execute = document.querySelector('.navigation-execute-section');
-      const overviewButton = document.querySelector('.navigation-item[data-view="overview"]');
-      const agentButton = document.querySelector('.navigation-item[data-view="agent"]');
-      const securityTab = document.querySelector('[data-settings-tab="security"]');
-      const securityPane = document.querySelector('[data-settings-pane="security"]');
-      const permissionButtons = Array.from(document.querySelectorAll('#web-permission-profiles [data-permission-profile]'));
-      const bypassTile = document.querySelector('#web-bypass-toggle');
-      const statusPermission = document.querySelector('#status-permission-action');
-      const simplePermission = document.querySelector('#simple-overview [data-open-settings-tab="security"]');
-      const homePermissionCard = document.querySelector('.home-permission-card');
-      const agentAuthority = document.querySelector('.agent-authority-priority');
-      const runsButton = document.querySelector('.navigation-item[data-view="runs"]');
-      const computerButton = document.querySelector('.navigation-item[data-view="computer"]');
-      const workbenchToggle = document.querySelector('#execute-group-toggle');
-      const shell = document.querySelector('.application-shell');
-      const sidebar = document.querySelector('.sidebar');
-      const sidebarSetting = document.querySelector('#sidebar-collapsed-setting');
-      const appearanceTab = document.querySelector('[data-settings-tab="appearance"]');
-      const hostTab = document.querySelector('[data-settings-tab="host"]');
-      const startupView = document.querySelector('#ui-startup-view');
-      const simpleOverview = document.querySelector('#simple-overview');
-      const fullOverview = document.querySelector('.overview-full-content');
-      if (
-        !(language instanceof HTMLSelectElement) ||
-        !(mode instanceof HTMLSelectElement) ||
-        !(execute instanceof HTMLElement) ||
-        !(overviewButton instanceof HTMLButtonElement) ||
-        !(agentButton instanceof HTMLButtonElement) ||
-        !(securityTab instanceof HTMLButtonElement) ||
-        !(securityPane instanceof HTMLElement) ||
-        permissionButtons.length !== 3 ||
-        !permissionButtons.every((button) => button instanceof HTMLButtonElement) ||
-        !(bypassTile instanceof HTMLButtonElement) ||
-        !(statusPermission instanceof HTMLButtonElement) ||
-        !(simplePermission instanceof HTMLButtonElement) ||
-        !(homePermissionCard instanceof HTMLButtonElement) ||
-        !(agentAuthority instanceof HTMLElement) ||
-        !(runsButton instanceof HTMLButtonElement) ||
-        !(computerButton instanceof HTMLButtonElement) ||
-        !(workbenchToggle instanceof HTMLButtonElement) ||
-        !(shell instanceof HTMLElement) ||
-        !(sidebar instanceof HTMLElement) ||
-        !(sidebarSetting instanceof HTMLInputElement) ||
-        !(appearanceTab instanceof HTMLButtonElement) ||
-        !(hostTab instanceof HTMLButtonElement) ||
-        !(startupView instanceof HTMLSelectElement) ||
-        !(simpleOverview instanceof HTMLElement) ||
-        !(fullOverview instanceof HTMLElement)
-      ) {
-        return { ok: false, reason: 'preference controls missing' };
-      }
-      overviewButton.click();
-      language.value = 'zh-CN';
-      language.dispatchEvent(new Event('change', { bubbles: true }));
-      mode.value = 'simple';
-      mode.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const chineseSimple =
-        document.documentElement.lang === 'zh-CN' &&
-        document.documentElement.dataset.experienceMode === 'simple' &&
-        getComputedStyle(execute).display === 'none' &&
-        getComputedStyle(simpleOverview).display !== 'none' &&
-        getComputedStyle(fullOverview).display === 'none' &&
-        simpleOverview.innerText.includes('工作区') &&
-        simpleOverview.innerText.includes('连接') &&
-        simpleOverview.innerText.includes('权限') &&
-        !(document.body?.innerText ?? '').includes('最近活动') &&
-        !(document.body?.innerText ?? '').includes('技术详情');
-      agentButton.click();
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const simpleAuthorityBoundary =
-        getComputedStyle(securityTab).display !== 'none' &&
-        getComputedStyle(bypassTile).display !== 'none' &&
-        getComputedStyle(agentAuthority).display !== 'none' &&
-        getComputedStyle(statusPermission).display !== 'none' &&
-        getComputedStyle(simplePermission).display !== 'none' &&
-        getComputedStyle(permissionButtons[0]).display !== 'none' &&
-        getComputedStyle(permissionButtons[1]).display !== 'none' &&
-        getComputedStyle(permissionButtons[2]).display !== 'none' &&
-        permissionButtons[2].classList.contains('is-selected') &&
-        permissionButtons[2].getAttribute('aria-pressed') === 'true' &&
-        simplePermission.textContent?.trim() === '更改权限';
-      const chineseNavigation =
-        overviewButton.querySelector('.navigation-label')?.textContent?.trim() === '首页' &&
-        agentButton.querySelector('.navigation-label')?.textContent?.trim() === 'ChatGPT 连接' &&
-        runsButton.querySelector('.navigation-label')?.textContent?.trim() === '任务记录' &&
-        computerButton.querySelector('.navigation-label')?.textContent?.trim() === '桌面控制' &&
-        workbenchToggle.querySelector('span')?.textContent?.trim() === '工作台' &&
-        securityTab.textContent?.trim() === '权限与安全';
-      statusPermission.click();
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const simplePermissionEntry =
-        document.querySelector('#view-settings')?.classList.contains('is-active') === true &&
-        securityPane.classList.contains('is-active') &&
-        !securityPane.hidden &&
-        securityTab.classList.contains('is-active');
-
-      securityTab.focus();
-      securityTab.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const hostKeyboard =
-        document.activeElement === hostTab &&
-        hostTab.getAttribute('aria-selected') === 'true' &&
-        hostTab.tabIndex === 0 &&
-        document.querySelector('[data-settings-pane="host"]')?.hasAttribute('hidden') === false;
-      hostTab.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const settingsKeyboard =
-        hostKeyboard &&
-        document.activeElement === securityTab &&
-        securityTab.getAttribute('aria-selected') === 'true' &&
-        securityTab.tabIndex === 0;
-
-      sidebarSetting.checked = true;
-      sidebarSetting.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const collapsedSidebar =
-        shell.classList.contains('sidebar-collapsed') &&
-        Math.abs(sidebar.getBoundingClientRect().width - 56) <= 1 &&
-        getComputedStyle(overviewButton.querySelector('.navigation-label')).display === 'none' &&
-        getComputedStyle(overviewButton.querySelector('.navigation-icon')).display !== 'none';
-      sidebarSetting.checked = false;
-      sidebarSetting.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-
-      overviewButton.click();
-      language.value = 'en';
-      language.dispatchEvent(new Event('change', { bubbles: true }));
-      mode.value = 'full';
-      mode.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const englishFull =
-        document.documentElement.lang === 'en' &&
-        document.documentElement.dataset.experienceMode === 'full' &&
-        getComputedStyle(execute).display !== 'none' &&
-        getComputedStyle(simpleOverview).display === 'none' &&
-        getComputedStyle(fullOverview).display !== 'none' &&
-        getComputedStyle(homePermissionCard).display !== 'none' &&
-        getComputedStyle(statusPermission).display !== 'none' &&
-        overviewButton.querySelector('.navigation-label')?.textContent?.trim() === 'Home' &&
-        agentButton.querySelector('.navigation-label')?.textContent?.trim() === 'ChatGPT Connection' &&
-        runsButton.querySelector('.navigation-label')?.textContent?.trim() === 'Task History' &&
-        computerButton.querySelector('.navigation-label')?.textContent?.trim() === 'Desktop Control' &&
-        workbenchToggle.querySelector('span')?.textContent?.trim() === 'Workbench' &&
-        appearanceTab.textContent?.trim() === 'Appearance' &&
-        hostTab.textContent?.trim() === 'Host' &&
-        securityTab.textContent?.trim() === 'Permissions & Security' &&
-        startupView.querySelector('option[value="runs"]')?.textContent?.trim() === 'Task History' &&
-        document.querySelector('#status-permission-action .statusbar-label')?.textContent?.trim() === 'Permission' &&
-        document.querySelector('#status-authority')?.textContent?.trim() === 'Ask for high-risk actions · L3' &&
-        !(document.body?.innerText ?? '').includes('Recent activity') &&
-        (document.body?.innerText ?? '').includes('Technical details');
-      return {
-        ok:
-          chineseSimple &&
-          simpleAuthorityBoundary &&
-          chineseNavigation &&
-          simplePermissionEntry &&
-          settingsKeyboard &&
-          collapsedSidebar &&
-          englishFull,
-        chineseSimple,
-        simpleAuthorityBoundary,
-        chineseNavigation,
-        simplePermissionEntry,
-        settingsKeyboard,
-        collapsedSidebar,
-        englishFull,
-      };
-    })()`,
-    true,
-  ) as {
-    readonly ok: boolean;
-    readonly reason?: string;
-    readonly chineseSimple?: boolean;
-    readonly simpleAuthorityBoundary?: boolean;
-    readonly chineseNavigation?: boolean;
-    readonly simplePermissionEntry?: boolean;
-    readonly settingsKeyboard?: boolean;
-    readonly collapsedSidebar?: boolean;
-    readonly englishFull?: boolean;
-  };
-  if (!result.ok) {
-    throw new Error(`Interface preference verification failed: ${JSON.stringify(result)}`);
-  }
-}
-
-async function activateView(window: BrowserWindow, view: string): Promise<void> {
-  const activated = await window.webContents.executeJavaScript(
-    `(() => {
-      const button = document.querySelector('.navigation-item[data-view=${JSON.stringify(view)}]');
-      if (!(button instanceof HTMLButtonElement)) return false;
-      button.click();
-      const scroll = document.querySelector('.content-scroll');
-      if (scroll instanceof HTMLElement) scroll.scrollTop = 0;
-      return document.querySelector('#view-${view}')?.classList.contains('is-active') === true;
-    })()`,
-    true,
-  ) as boolean;
-  if (!activated) {
-    throw new Error(`Could not activate renderer view: ${view}`);
-  }
-  await window.webContents.executeJavaScript(
-    "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
-    true,
-  );
-  await delay(80);
-}
-
-async function verifyPermissionSelectionRetention(window: BrowserWindow): Promise<void> {
-  await activateView(window, "settings");
-  const result = await window.webContents.executeJavaScript(
-    `(async () => {
-      const hostTab = document.querySelector('[data-settings-tab="host"]');
-      const securityTab = document.querySelector('[data-settings-tab="security"]');
-      const unattended = document.querySelector('#unattended-workspace-access');
-      const settingsBypass = document.querySelector('#settings-bypass-toggle');
-      const webBypass = document.querySelector('#web-bypass-toggle');
-      const bypassStateLabel = document.querySelector('#settings-bypass-state');
-      const restartValue = document.querySelector('#restart-authority-value');
-      const statusAuthority = document.querySelector('#status-authority');
-      const settingsGroup = document.querySelector('#settings-permission-profiles');
-      const webGroup = document.querySelector('#web-permission-profiles');
-      const settingsConsequential = document.querySelector(
-        '[data-settings-pane="security"] [data-permission-profile="consequential"]',
-      );
-      const webConsequential = document.querySelector(
-        '#web-permission-profiles [data-permission-profile="consequential"]',
-      );
-      if (
-        !(hostTab instanceof HTMLButtonElement) ||
-        !(securityTab instanceof HTMLButtonElement) ||
-        !(unattended instanceof HTMLInputElement) ||
-        !(settingsBypass instanceof HTMLButtonElement) ||
-        !(webBypass instanceof HTMLButtonElement) ||
-        !(bypassStateLabel instanceof HTMLElement) ||
-        !(restartValue instanceof HTMLElement) ||
-        !(statusAuthority instanceof HTMLElement) ||
-        !(settingsGroup instanceof HTMLElement) ||
-        !(webGroup instanceof HTMLElement) ||
-        !(settingsConsequential instanceof HTMLButtonElement) ||
-        !(webConsequential instanceof HTMLButtonElement)
-      ) {
-        return { ok: false, reason: 'permission selector controls missing' };
-      }
-
-      const settingsButtons = Array.from(settingsGroup.querySelectorAll('[data-permission-profile]'));
-      const webButtons = Array.from(webGroup.querySelectorAll('[data-permission-profile]'));
-      if (
-        settingsButtons.length !== 3 ||
-        webButtons.length !== 3 ||
-        !settingsButtons.every((button) => button instanceof HTMLButtonElement) ||
-        !webButtons.every((button) => button instanceof HTMLButtonElement)
-      ) {
-        return { ok: false, reason: 'L1-L3 permission buttons missing' };
-      }
-
-      const waitForState = async (predicate) => {
-        const deadline = Date.now() + 2_000;
-        let snapshot = await window.sovereign.getState();
-        while (!predicate(snapshot) && Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 25));
-          snapshot = await window.sovereign.getState();
-        }
-        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        return snapshot;
-      };
-      const selectedLabel = 'Ask for high-risk actions · L3';
-      const l4Label = 'Bypass confirmations · L4';
-      const isSelected = (button) =>
-        button.classList.contains('is-selected') && button.getAttribute('aria-pressed') === 'true';
-      const noL1ToL3Selected = (buttons) => buttons.every((button) =>
-        !button.classList.contains('is-selected') && button.getAttribute('aria-pressed') === 'false'
-      );
-
-      hostTab.click();
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const initialState = await waitForState((snapshot) =>
-        snapshot.permissionProfile === 'consequential' &&
-        snapshot.rememberedPermissionProfile === 'consequential' &&
-        snapshot.unattendedWorkspaceAccess === true
-      );
-      const initialSelection =
-        initialState.permissionProfile === 'consequential' &&
-        initialState.rememberedPermissionProfile === 'consequential' &&
-        unattended.checked &&
-        restartValue.textContent?.trim() === selectedLabel &&
-        statusAuthority.textContent?.trim() === selectedLabel &&
-        isSelected(settingsConsequential) &&
-        isSelected(webConsequential) &&
-        !isSelected(settingsBypass) &&
-        !isSelected(webBypass);
-
-      unattended.checked = false;
-      unattended.dispatchEvent(new Event('change', { bubbles: true }));
-      const disabledState = await waitForState((snapshot) =>
-        snapshot.unattendedWorkspaceAccess === false &&
-        snapshot.permissionProfile === 'consequential' &&
-        snapshot.rememberedPermissionProfile === 'consequential'
-      );
-      const preservedWhenDisabled =
-        disabledState.unattendedWorkspaceAccess === false &&
-        disabledState.permissionProfile === 'consequential' &&
-        disabledState.rememberedPermissionProfile === 'consequential' &&
-        !unattended.checked;
-
-      unattended.checked = true;
-      unattended.dispatchEvent(new Event('change', { bubbles: true }));
-      const enabledState = await waitForState((snapshot) =>
-        snapshot.unattendedWorkspaceAccess === true &&
-        snapshot.permissionProfile === 'consequential' &&
-        snapshot.rememberedPermissionProfile === 'consequential'
-      );
-      const preservedWhenEnabled =
-        enabledState.unattendedWorkspaceAccess === true &&
-        enabledState.permissionProfile === 'consequential' &&
-        enabledState.rememberedPermissionProfile === 'consequential' &&
-        unattended.checked;
-
-      securityTab.click();
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      settingsBypass.click();
-      const bypassState = await waitForState((snapshot) =>
-        snapshot.permissionProfile === 'bypass' &&
-        snapshot.rememberedPermissionProfile === 'consequential'
-      );
-      const bypassShowsSingleActiveLevel =
-        bypassState.permissionProfile === 'bypass' &&
-        bypassState.rememberedPermissionProfile === 'consequential' &&
-        statusAuthority.textContent?.trim() === l4Label &&
-        restartValue.textContent?.trim() === l4Label &&
-        noL1ToL3Selected(settingsButtons) &&
-        noL1ToL3Selected(webButtons) &&
-        isSelected(settingsBypass) &&
-        isSelected(webBypass) &&
-        settingsGroup.classList.contains('shows-bypass-active') &&
-        webGroup.classList.contains('shows-bypass-active') &&
-        settingsGroup.getAttribute('aria-label') === 'ChatGPT permission level' &&
-        bypassStateLabel.textContent?.trim() === 'On';
-
-      settingsBypass.click();
-      const restoredState = await waitForState((snapshot) =>
-        snapshot.permissionProfile === 'consequential' &&
-        snapshot.rememberedPermissionProfile === 'consequential'
-      );
-      const restoredAfterBypass =
-        restoredState.permissionProfile === 'consequential' &&
-        restoredState.rememberedPermissionProfile === 'consequential' &&
-        restoredState.unattendedWorkspaceAccess === true &&
-        statusAuthority.textContent?.trim() === selectedLabel &&
-        restartValue.textContent?.trim() === selectedLabel &&
-        isSelected(settingsConsequential) &&
-        isSelected(webConsequential) &&
-        !isSelected(settingsBypass) &&
-        !isSelected(webBypass) &&
-        bypassStateLabel.textContent?.trim() === 'Off';
-
-      return {
-        ok:
-          initialSelection &&
-          preservedWhenDisabled &&
-          preservedWhenEnabled &&
-          bypassShowsSingleActiveLevel &&
-          restoredAfterBypass,
-        initialSelection,
-        preservedWhenDisabled,
-        preservedWhenEnabled,
-        bypassShowsSingleActiveLevel,
-        restoredAfterBypass,
-      };
-    })()`,
-    true,
-  ) as {
-    readonly ok: boolean;
-    readonly reason?: string;
-    readonly initialSelection?: boolean;
-    readonly preservedWhenDisabled?: boolean;
-    readonly preservedWhenEnabled?: boolean;
-    readonly bypassShowsSingleActiveLevel?: boolean;
-    readonly restoredAfterBypass?: boolean;
-  };
-  if (!result.ok) {
-    throw new Error(`Permission selection retention verification failed: ${JSON.stringify(result)}`);
-  }
-}
-
-async function verifyActivityView(window: BrowserWindow): Promise<void> {
-  await activateView(window, "runs");
-  const result = await window.webContents.executeJavaScript(
-    `(async () => {
-      const language = document.querySelector('#ui-language');
-      const empty = document.querySelector('#runs-empty-state');
-      const workbench = document.querySelector('#runs-workbench');
-      const runsCount = document.querySelector('#runs-count');
-      const cancel = document.querySelector('#run-cancel');
-      const stdout = document.querySelector('#run-stdout');
-      const stderr = document.querySelector('#run-stderr');
-      const runsTab = document.querySelector('#runs-tab-runs');
-      const auditTab = document.querySelector('#runs-tab-audit');
-      const search = document.querySelector('#audit-search');
-      const outcomeFilter = document.querySelector('#audit-outcome-filter');
-      const subviewTabs = document.querySelector('.subview-tabs');
-      const outputTabs = document.querySelector('.run-output-tabs');
-      const activeSection = document.querySelector('#active-run-section');
-      const activeEmpty = document.querySelector('#active-run-empty');
-      const activeTitle = document.querySelector('#active-run-title');
-      const activeDuration = document.querySelector('#active-run-duration');
-      const activeOutput = document.querySelector('#active-run-output');
-      const activeView = document.querySelector('#active-run-view');
-      const activeCancel = document.querySelector('#active-run-cancel');
-      if (
-        !(language instanceof HTMLSelectElement) ||
-        !(empty instanceof HTMLElement) ||
-        !(workbench instanceof HTMLElement) ||
-        !(runsCount instanceof HTMLElement) ||
-        !(cancel instanceof HTMLButtonElement) ||
-        !(stdout instanceof HTMLElement) ||
-        !(stderr instanceof HTMLElement) ||
-        !(runsTab instanceof HTMLButtonElement) ||
-        !(auditTab instanceof HTMLButtonElement) ||
-        !(search instanceof HTMLInputElement) ||
-        !(outcomeFilter instanceof HTMLSelectElement) ||
-        !(subviewTabs instanceof HTMLElement) ||
-        !(outputTabs instanceof HTMLElement) ||
-        !(activeSection instanceof HTMLElement) ||
-        !(activeEmpty instanceof HTMLElement) ||
-        !(activeTitle instanceof HTMLElement) ||
-        !(activeDuration instanceof HTMLElement) ||
-        !(activeOutput instanceof HTMLElement) ||
-        !(activeView instanceof HTMLButtonElement) ||
-        !(activeCancel instanceof HTMLButtonElement)
-      ) {
-        return { ok: false, reason: 'task history controls missing' };
-      }
-
-      // Task History intentionally restores the operator's last subview. Establish the
-      // Runs tab explicitly before asserting its tab semantics so prior visual runs cannot
-      // leak a persisted Audit selection into this verification.
-      runsTab.click();
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-
-      const deadline = Date.now() + 2_000;
-      while (
-        (document.querySelectorAll('#runs-list .run-row').length < 3 || activeTitle.textContent?.trim() !== 'pnpm typecheck') &&
-        Date.now() < deadline
-      ) {
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-      // Recent output arrives asynchronously. Sampling before it lands captures
-      // the loading placeholder, and the later language comparison then reads a
-      // legitimate content change as a localization failure.
-      const activeOutputDeadline = Date.now() + 5_000;
-      while (
-        !(activeOutput.textContent ?? '').includes('tsc -b --pretty false') &&
-        Date.now() < activeOutputDeadline
-      ) {
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-      const originalStdout = stdout.textContent ?? '';
-      const originalActiveOutput = activeOutput.textContent ?? '';
-      const activeRunState =
-        !activeSection.hidden &&
-        getComputedStyle(activeSection).display !== 'none' &&
-        activeEmpty.hidden &&
-        getComputedStyle(activeEmpty).display === 'none' &&
-        activeTitle.textContent?.trim() === 'pnpm typecheck' &&
-        activeDuration.textContent?.trim() !== '—' &&
-        originalActiveOutput.includes('tsc -b --pretty false') &&
-        !activeCancel.disabled &&
-        Number.parseFloat(getComputedStyle(activeOutput).fontSize) >= 11.5 &&
-        document.querySelector('.activity-monitor') === null;
-      const historyState =
-        empty.hidden &&
-        getComputedStyle(empty).display === 'none' &&
-        !workbench.hidden &&
-        getComputedStyle(workbench).display !== 'none' &&
-        document.querySelectorAll('#runs-list .run-row').length === 3 &&
-        runsCount.textContent?.trim() === '1 active · 3 total';
-      const tabValues = {
-        subviewRole: subviewTabs.getAttribute('role'),
-        runsRole: runsTab.getAttribute('role'),
-        runsControls: runsTab.getAttribute('aria-controls'),
-        runsSelected: runsTab.getAttribute('aria-selected'),
-        runsTabIndex: runsTab.tabIndex,
-        auditSelected: auditTab.getAttribute('aria-selected'),
-        auditTabIndex: auditTab.tabIndex,
-        outputRole: outputTabs.getAttribute('role'),
-        stdoutRole: document.querySelector('#run-output-pane-stdout')?.getAttribute('role'),
-      };
-      const tabSemantics =
-        tabValues.subviewRole === 'tablist' &&
-        tabValues.runsRole === 'tab' &&
-        tabValues.runsControls === 'runs-pane-runs' &&
-        tabValues.runsSelected === 'true' &&
-        tabValues.runsTabIndex === 0 &&
-        tabValues.auditTabIndex === -1 &&
-        tabValues.outputRole === 'tablist' &&
-        tabValues.stdoutRole === 'tabpanel';
-
-      runsTab.focus();
-      runsTab.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'ArrowRight',
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-      }));
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const focusedAuditTab = document.activeElement;
-      const keyboardAudit =
-        focusedAuditTab instanceof HTMLButtonElement &&
-        focusedAuditTab.dataset.runsTab === 'audit' &&
-        focusedAuditTab.getAttribute('aria-selected') === 'true' &&
-        focusedAuditTab.tabIndex === 0 &&
-        !document.querySelector('#runs-pane-audit')?.hasAttribute('hidden');
-      if (focusedAuditTab instanceof HTMLButtonElement) {
-        focusedAuditTab.dispatchEvent(new KeyboardEvent('keydown', {
-          key: 'ArrowLeft',
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-        }));
-      }
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const focusedRunsTab = document.activeElement;
-      const keyboardTabs =
-        keyboardAudit &&
-        focusedRunsTab instanceof HTMLButtonElement &&
-        focusedRunsTab.dataset.runsTab === 'runs' &&
-        focusedRunsTab.getAttribute('aria-selected') === 'true' &&
-        focusedRunsTab.tabIndex === 0 &&
-        !document.querySelector('#runs-pane-runs')?.hasAttribute('hidden');
-
-      language.value = 'zh-CN';
-      language.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const localizedOutputDeadline = Date.now() + 2_000;
-      while (activeOutput.textContent !== originalActiveOutput && Date.now() < localizedOutputDeadline) {
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-
-      const chineseValues = {
-        lang: document.documentElement.lang,
-        emptyHidden: empty.hidden,
-        emptyDisplay: getComputedStyle(empty).display,
-        emptyTitle: empty.querySelector('strong')?.textContent?.trim(),
-        emptyText: empty.textContent?.trim(),
-        runsCount: runsCount.textContent?.trim(),
-        subviewLabel: subviewTabs.getAttribute('aria-label'),
-        outputLabel: outputTabs.getAttribute('aria-label'),
-        cancel: cancel.textContent?.trim(),
-        activeText: activeSection.innerText,
-        activeView: activeView.textContent?.trim(),
-        activeCancel: activeCancel.textContent?.trim(),
-        stderr: stderr.textContent?.trim(),
-        stderrPlaceholder: stderr.hasAttribute('data-i18n-placeholder'),
-        stdoutSame: stdout.textContent === originalStdout,
-        stdoutPlaceholder: stdout.hasAttribute('data-i18n-placeholder'),
-        activeOutputSame: activeOutput.textContent === originalActiveOutput,
-      };
-      const chineseRuns =
-        chineseValues.lang === 'zh-CN' &&
-        chineseValues.emptyHidden &&
-        chineseValues.emptyDisplay === 'none' &&
-        chineseValues.emptyTitle === '尚无运行历史' &&
-        chineseValues.emptyText?.includes('持续时间和退出状态') === true &&
-        chineseValues.runsCount === '1 个活动 · 共 3 条' &&
-        chineseValues.subviewLabel === '任务记录视图' &&
-        chineseValues.outputLabel === '运行输出' &&
-        chineseValues.cancel === '取消任务' &&
-        chineseValues.activeText.includes('当前任务') &&
-        chineseValues.activeView === '查看详情' &&
-        chineseValues.activeCancel === '取消任务' &&
-        chineseValues.activeOutputSame &&
-        chineseValues.stderr === '未捕获 stderr。' &&
-        chineseValues.stderrPlaceholder &&
-        chineseValues.stdoutSame &&
-        !chineseValues.stdoutPlaceholder;
-      auditTab.click();
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const chineseAudit =
-        search.placeholder === '按工具、操作或路径筛选' &&
-        outcomeFilter.getAttribute('aria-label') === '审计结果筛选' &&
-        document.querySelector('.outcome-denied')?.textContent?.trim() === '已拒绝';
-
-      search.value = '__visual_no_receipt_match__';
-      search.dispatchEvent(new Event('input', { bubbles: true }));
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const filteredEmpty = document.querySelector('#audit-body .table-empty')?.textContent?.trim();
-      const chineseFilteredEmpty = filteredEmpty === '没有符合当前筛选条件的回执。';
-
-      search.value = '';
-      search.dispatchEvent(new Event('input', { bubbles: true }));
-      runsTab.click();
-      language.value = 'en';
-      language.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const restoredOutputDeadline = Date.now() + 2_000;
-      while (activeOutput.textContent !== originalActiveOutput && Date.now() < restoredOutputDeadline) {
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-      const restoredEnglish =
-        document.documentElement.lang === 'en' &&
-        runsCount.textContent?.trim() === '1 active · 3 total' &&
-        empty.querySelector('strong')?.textContent?.trim() === 'No run history yet' &&
-        subviewTabs.getAttribute('aria-label') === 'Task history views' &&
-        activeSection.innerText.includes('CURRENT TASK') &&
-        activeCancel.textContent?.trim() === 'Cancel task' &&
-        stderr.textContent?.trim() === 'No stderr captured.' &&
-        stdout.textContent === originalStdout &&
-        activeOutput.textContent === originalActiveOutput &&
-        document.querySelector('#status-permission-action .statusbar-label')?.textContent?.trim() === 'Permission';
-
-      return {
-        ok:
-          activeRunState &&
-          historyState &&
-          tabSemantics &&
-          keyboardTabs &&
-          chineseRuns &&
-          chineseAudit &&
-          chineseFilteredEmpty &&
-          restoredEnglish,
-        activeRunState,
-        historyState,
-        tabSemantics,
-        tabValues,
-        keyboardTabs,
-        chineseRuns,
-        chineseValues,
-        chineseAudit,
-        chineseFilteredEmpty,
-        filteredEmpty,
-        restoredEnglish,
-        restoredEnglishValues: {
-          lang: document.documentElement.lang,
-          runsCount: runsCount.textContent?.trim(),
-          emptyTitle: empty.querySelector('strong')?.textContent?.trim(),
-          subviewLabel: subviewTabs.getAttribute('aria-label'),
-          activeText: activeSection.innerText,
-          activeCancel: activeCancel.textContent?.trim(),
-          stderr: stderr.textContent?.trim(),
-          stdoutSame: stdout.textContent === originalStdout,
-          activeOutputSame: activeOutput.textContent === originalActiveOutput,
-          permissionLabel: document.querySelector('#status-permission-action .statusbar-label')?.textContent?.trim(),
-        },
-      };
-    })()`,
-    true,
-  ) as {
-    readonly ok: boolean;
-    readonly reason?: string;
-    readonly activeRunState?: boolean;
-    readonly historyState?: boolean;
-    readonly tabSemantics?: boolean;
-    readonly tabValues?: Readonly<Record<string, unknown>>;
-    readonly keyboardTabs?: boolean;
-    readonly chineseRuns?: boolean;
-    readonly chineseValues?: Readonly<Record<string, unknown>>;
-    readonly chineseAudit?: boolean;
-    readonly chineseFilteredEmpty?: boolean;
-    readonly filteredEmpty?: string;
-    readonly restoredEnglish?: boolean;
-  };
-  if (!result.ok) {
-    throw new Error(`Task History verification failed: ${JSON.stringify(result)}`);
-  }
-}
-
-async function verifyPersistentL4RendererState(
-  window: BrowserWindow,
-  rendererProblems: readonly string[],
-): Promise<void> {
-  await activateView(window, "settings");
-  const enabled = await window.webContents.executeJavaScript(
-    `(async () => {
-      const securityTab = document.querySelector('[data-settings-tab="security"]');
-      const consequential = document.querySelector(
-        '[data-settings-pane="security"] [data-permission-profile="consequential"]',
-      );
-      const permissionGroup = document.querySelector('#settings-permission-profiles');
-      const bypassToggle = document.querySelector('#settings-bypass-toggle');
-      const authority = document.querySelector('#status-authority');
-      const restartValue = document.querySelector('#restart-authority-value');
-      const experienceMode = document.querySelector('#ui-experience-mode');
-      if (
-        !(securityTab instanceof HTMLButtonElement) ||
-        !(consequential instanceof HTMLButtonElement) ||
-        !(permissionGroup instanceof HTMLElement) ||
-        !(bypassToggle instanceof HTMLButtonElement) ||
-        !(authority instanceof HTMLElement) ||
-        !(restartValue instanceof HTMLElement) ||
-        !(experienceMode instanceof HTMLSelectElement)
-      ) {
-        return { ok: false, reason: 'persistent L4 controls missing' };
-      }
-      const buttons = Array.from(permissionGroup.querySelectorAll('[data-permission-profile]'));
-      const waitForState = async (predicate) => {
-        const deadline = Date.now() + 2_000;
-        let state = await window.sovereign.getState();
-        while (!predicate(state) && Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 25));
-          state = await window.sovereign.getState();
-        }
-        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        return state;
-      };
-      const noL1ToL3Selected = () => buttons.every((button) =>
-        button instanceof HTMLButtonElement &&
-        !button.classList.contains('is-selected') &&
-        button.getAttribute('aria-pressed') === 'false'
-      );
-
-      securityTab.click();
-      consequential.click();
-      await waitForState((state) => state.permissionProfile === 'consequential');
-      bypassToggle.click();
-      const state = await waitForState((candidate) =>
-        candidate.permissionProfile === 'bypass' &&
-        candidate.rememberedPermissionProfile === 'consequential'
-      );
-
-      experienceMode.value = 'simple';
-      experienceMode.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const simpleModeKeepsL4Visible =
-        getComputedStyle(bypassToggle).display !== 'none' &&
-        bypassToggle.getBoundingClientRect().height > 0;
-      experienceMode.value = 'full';
-      experienceMode.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-
-      return {
-        ok:
-          state.permissionProfile === 'bypass' &&
-          state.rememberedPermissionProfile === 'consequential' &&
-          authority.textContent?.trim() === 'Bypass confirmations · L4' &&
-          restartValue.textContent?.trim() === 'Bypass confirmations · L4' &&
-          noL1ToL3Selected() &&
-          bypassToggle.classList.contains('is-selected') &&
-          bypassToggle.getAttribute('aria-pressed') === 'true' &&
-          permissionGroup.classList.contains('shows-bypass-active') &&
-          simpleModeKeepsL4Visible,
-        permissionProfile: state.permissionProfile,
-        rememberedPermissionProfile: state.rememberedPermissionProfile,
-        selectedCount: buttons.filter((button) => button.classList.contains('is-selected')).length,
-        l4Selected: bypassToggle.classList.contains('is-selected'),
-        simpleModeKeepsL4Visible,
-      };
-    })()`,
-    true,
-  ) as {
-    readonly ok: boolean;
-    readonly reason?: string;
-    readonly permissionProfile?: string;
-    readonly rememberedPermissionProfile?: string;
-    readonly selectedCount?: number;
-    readonly l4Selected?: boolean;
-    readonly simpleModeKeepsL4Visible?: boolean;
-  };
-  if (!enabled.ok) {
-    throw new Error(`Could not establish persistent L4 state: ${JSON.stringify(enabled)}`);
-  }
-
-  await window.loadURL(`${RENDERER_ORIGIN}index.html`);
-  await waitForRenderer(window, rendererProblems);
-  await activateView(window, "settings");
-  const deadline = Date.now() + 2_000;
-  let restored: {
-    readonly ok: boolean;
-    readonly state?: unknown;
-    readonly selectedCount?: number;
-    readonly l4Selected?: boolean;
-  } = { ok: false };
-  while (!restored.ok && Date.now() < deadline) {
-    restored = await window.webContents.executeJavaScript(
-      `(async () => {
-        const securityTab = document.querySelector('[data-settings-tab="security"]');
-        if (securityTab instanceof HTMLButtonElement) {
-          securityTab.click();
-          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        }
-        const state = await window.sovereign.getState();
-        const group = document.querySelector('#settings-permission-profiles');
-        const bypassToggle = document.querySelector('#settings-bypass-toggle');
-        const buttons = Array.from(group?.querySelectorAll('[data-permission-profile]') ?? []);
-        const selectedCount = buttons.filter((button) =>
-          button.classList.contains('is-selected') || button.getAttribute('aria-pressed') === 'true'
-        ).length;
-        return {
-          ok:
-            state.permissionProfile === 'bypass' &&
-            state.rememberedPermissionProfile === 'consequential' &&
-            selectedCount === 0 &&
-            bypassToggle instanceof HTMLButtonElement &&
-            bypassToggle.classList.contains('is-selected') &&
-            bypassToggle.getAttribute('aria-pressed') === 'true' &&
-            group?.classList.contains('shows-bypass-active') === true,
-          state,
-          selectedCount,
-          l4Selected: bypassToggle?.classList.contains('is-selected'),
-        };
-      })()`,
-      true,
-    ) as typeof restored;
-    if (!restored.ok) {
-      await delay(25);
-    }
-  }
-  if (!restored.ok) {
-    throw new Error(`L4 was not retained after renderer reload: ${JSON.stringify(restored)}`);
-  }
-
-  const revoked = await window.webContents.executeJavaScript(
-    `(async () => {
-      const securityTab = document.querySelector('[data-settings-tab="security"]');
-      const bypassToggle = document.querySelector('#settings-bypass-toggle');
-      const consequential = document.querySelector(
-        '[data-settings-pane="security"] [data-permission-profile="consequential"]',
-      );
-      const experienceMode = document.querySelector('#ui-experience-mode');
-      if (
-        !(securityTab instanceof HTMLButtonElement) ||
-        !(bypassToggle instanceof HTMLButtonElement) ||
-        !(consequential instanceof HTMLButtonElement) ||
-        !(experienceMode instanceof HTMLSelectElement)
-      ) {
-        return false;
-      }
-      securityTab.click();
-      bypassToggle.click();
-      const deadline = Date.now() + 2_000;
-      let state = await window.sovereign.getState();
-      while (state.permissionProfile !== 'consequential' && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 25));
-        state = await window.sovereign.getState();
-      }
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      experienceMode.value = 'simple';
-      experienceMode.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const simpleModeKeepsActiveL3Visible =
-        consequential.classList.contains('is-selected') &&
-        consequential.getAttribute('aria-pressed') === 'true' &&
-        getComputedStyle(consequential).display !== 'none' &&
-        consequential.getBoundingClientRect().height > 0;
-      experienceMode.value = 'full';
-      experienceMode.dispatchEvent(new Event('change', { bubbles: true }));
-      return state.permissionProfile === 'consequential' &&
-        state.rememberedPermissionProfile === 'consequential' &&
-        simpleModeKeepsActiveL3Visible;
-    })()`,
-    true,
-  ) as boolean;
-  if (!revoked) {
-    throw new Error('Could not revoke persistent L4 and restore the remembered L3 profile.');
-  }
-}
-
-async function verifyRoundTwoUiComposition(window: BrowserWindow): Promise<void> {
-  await activateView(window, "settings");
-  const settingsResult = await window.webContents.executeJavaScript(
-    `(async () => {
-      const language = document.querySelector('#ui-language');
-      const mode = document.querySelector('#ui-experience-mode');
-      const appearanceTab = document.querySelector('[data-settings-tab="appearance"]');
-      const hostTab = document.querySelector('[data-settings-tab="host"]');
-      const securityTab = document.querySelector('[data-settings-tab="security"]');
-      const tablist = document.querySelector('.settings-tabs');
-      const navRow = document.querySelector('.settings-nav-row');
-      const content = document.querySelector('.settings-content');
-      if (
-        !(language instanceof HTMLSelectElement) ||
-        !(mode instanceof HTMLSelectElement) ||
-        !(appearanceTab instanceof HTMLButtonElement) ||
-        !(hostTab instanceof HTMLButtonElement) ||
-        !(securityTab instanceof HTMLButtonElement) ||
-        !(tablist instanceof HTMLElement) ||
-        !(navRow instanceof HTMLElement) ||
-        !(content instanceof HTMLElement)
-      ) {
-        return { ok: false, reason: 'round-two settings controls missing' };
-      }
-      mode.value = 'full';
-      mode.dispatchEvent(new Event('change', { bubbles: true }));
-      language.value = 'zh-CN';
-      language.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-
-      securityTab.click();
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const permissionGroup = document.querySelector('#settings-permission-profiles');
-      const permissionTiles = Array.from(permissionGroup?.querySelectorAll('button') ?? []);
-      const permissionRects = permissionTiles.map((tile) => tile.getBoundingClientRect());
-      const widths = permissionRects.map((rect) => rect.width);
-      const heights = permissionRects.map((rect) => rect.height);
-      const balancedPermissions =
-        permissionGroup instanceof HTMLElement &&
-        permissionTiles.length === 4 &&
-        permissionTiles.every((tile) => tile instanceof HTMLButtonElement) &&
-        Math.max(...widths) - Math.min(...widths) < 2 &&
-        Math.max(...heights) - Math.min(...heights) < 2 &&
-        Math.min(...heights) >= 80 &&
-        permissionTiles.every(tile => {
-          const description = tile.querySelector('.permission-profile-description');
-          return description && description.textContent.trim().length > 0 &&
-            description.scrollHeight <= description.clientHeight + 1;
-        }) &&
-        document.querySelector('#settings-bypass-section') === null &&
-        document.querySelector('#settings-bypass-row') === null;
-
-      appearanceTab.click();
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const tabs = Array.from(tablist.querySelectorAll('[data-settings-tab]'));
-      const tabRects = tabs.map((tab) => tab.getBoundingClientRect());
-      const firstRow = document.querySelector('#settings-pane-appearance .settings-row');
-      const firstControl = firstRow?.querySelector('.settings-select');
-      const navRect = navRow.getBoundingClientRect();
-      const contentRect = content.getBoundingClientRect();
-      const firstRowStyle = firstRow instanceof HTMLElement ? getComputedStyle(firstRow) : null;
-      const rootStyle = getComputedStyle(document.documentElement);
-      const canvasToken = rootStyle.getPropertyValue('--ui-canvas').trim().toLowerCase();
-      const surfaceToken = rootStyle.getPropertyValue('--ui-surface').trim().toLowerCase();
-      const rowHasBreathingRoom =
-        firstRowStyle !== null &&
-        Number.parseFloat(firstRowStyle.paddingLeft) >= 16 &&
-        Number.parseFloat(firstRowStyle.paddingRight) >= 16 &&
-        Number.parseFloat(firstRowStyle.paddingTop) >= 12 &&
-        Number.parseFloat(firstRowStyle.paddingBottom) >= 12;
-      const neutralDarkPalette =
-        canvasToken === '#1e1e1e' &&
-        surfaceToken === '#252526' &&
-        getComputedStyle(document.body).backgroundColor === 'rgb(30, 30, 30)';
-      const compactSettings =
-        getComputedStyle(tablist).display === 'flex' &&
-        getComputedStyle(tablist).flexDirection === 'row' &&
-        navRect.height <= 58 &&
-        tabRects.length === 4 &&
-        Math.max(...tabRects.map((rect) => rect.top)) - Math.min(...tabRects.map((rect) => rect.top)) < 2 &&
-        contentRect.left - navRect.left < 90 &&
-        firstRow instanceof HTMLElement &&
-        firstControl instanceof HTMLElement &&
-        firstRow.getBoundingClientRect().height <= 96 &&
-        firstControl.getBoundingClientRect().width <= 200 &&
-        rowHasBreathingRoom &&
-        neutralDarkPalette;
-
-      hostTab.click();
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const hostSummary = document.querySelector('.remote-host-summary');
-      const hostSummaryText = hostSummary?.textContent ?? '';
-      const hostLocalized =
-        hostSummary instanceof HTMLElement &&
-        /[\u3400-\u9fff]/u.test(hostSummaryText) &&
-        !hostSummaryText.includes('Sovereign restores the authorized folder');
-
-      language.value = 'en';
-      language.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      return {
-        ok: balancedPermissions && compactSettings && hostLocalized,
-        balancedPermissions,
-        compactSettings,
-        hostLocalized,
-        permissionCount: permissionTiles.length,
-        permissionWidths: widths,
-        permissionHeights: heights,
-        navHeight: navRect.height,
-        contentOffset: contentRect.left - navRect.left,
-        firstRowHeight: firstRow?.getBoundingClientRect().height,
-        firstControlWidth: firstControl?.getBoundingClientRect().width,
-        firstRowPadding: firstRowStyle === null
-          ? null
-          : [firstRowStyle.paddingTop, firstRowStyle.paddingRight, firstRowStyle.paddingBottom, firstRowStyle.paddingLeft],
-        rowHasBreathingRoom,
-        canvasToken,
-        surfaceToken,
-        bodyBackground: getComputedStyle(document.body).backgroundColor,
-        neutralDarkPalette,
-        hostSummaryText,
-      };
-    })()`,
-    true,
-  ) as Readonly<Record<string, unknown>> & { readonly ok: boolean };
-  if (!settingsResult.ok) {
-    throw new Error(`Round-two settings composition failed: ${JSON.stringify(settingsResult)}`);
-  }
-
-  await activateView(window, "tasks");
-  await delay(120);
-  const taskResult = await window.webContents.executeJavaScript(
-    `(() => {
-      const grid = document.querySelector('.task-project-task-list');
-      const cards = Array.from(document.querySelectorAll('.task-summary-card')).filter(
-        (card) => card instanceof HTMLElement && card.getClientRects().length > 0,
-      );
-      const rects = cards.map((card) => card.getBoundingClientRect());
-      const styles = cards.map((card) => getComputedStyle(card));
-      const scanRows =
-        grid instanceof HTMLElement &&
-        getComputedStyle(grid).display === 'grid' &&
-        cards.length > 0 &&
-        Math.max(...rects.map((rect) => rect.height)) <= 180 &&
-        Math.max(...rects.map((rect) => rect.width)) - Math.min(...rects.map((rect) => rect.width)) < 2 &&
-        rects.every((rect, index) => index === 0 || rect.top >= rects[index - 1].bottom - 1) &&
-        styles.every((style) => style.borderRadius === '0px' && style.boxShadow === 'none');
-      return {
-        ok: scanRows,
-        cardCount: cards.length,
-        cardWidths: rects.map((rect) => rect.width),
-        cardHeights: rects.map((rect) => rect.height),
-        cardTops: rects.map((rect) => rect.top),
-        gridColumns: grid instanceof HTMLElement ? getComputedStyle(grid).gridTemplateColumns : null,
-      };
-    })()`,
-    true,
-  ) as Readonly<Record<string, unknown>> & { readonly ok: boolean };
-  if (!taskResult.ok) {
-    throw new Error(`Round-two task card composition failed: ${JSON.stringify(taskResult)}`);
-  }
-
-  await activateView(window, "overview");
-  await delay(80);
-  const overviewResult = await window.webContents.executeJavaScript(
-    `(() => {
-      const rows = Array.from(document.querySelectorAll('.overview-attention-row'));
-      const statusbar = document.querySelector('.statusbar');
-      const mainSurface = document.querySelector('.main-surface');
-      const topbar = document.querySelector('.topbar');
-      const contentScroll = document.querySelector('.content-scroll');
-      const activeWorkCard = document.querySelector('.home-active-work-card');
-      const summaryGrid = document.querySelector('.home-summary-grid');
-      const summaryCards = Array.from(
-        document.querySelectorAll('.home-summary-card:not(.home-active-work-card)'),
-      );
-      const firstAttention = rows[0];
-      const firstAttentionTitle = firstAttention?.querySelector('strong');
-      const firstAttentionMarker = firstAttention?.querySelector('.overview-attention-marker');
-      const firstAttentionRect = firstAttention?.getBoundingClientRect();
-      const firstAttentionTitleRect = firstAttentionTitle?.getBoundingClientRect();
-      const firstAttentionMarkerRect = firstAttentionMarker?.getBoundingClientRect();
-      const markerSeparatedFromCopy =
-        rows.length === 0 ||
-        (
-          firstAttention instanceof HTMLElement &&
-          firstAttentionTitle instanceof HTMLElement &&
-          firstAttentionMarker instanceof HTMLElement &&
-          firstAttentionRect !== undefined &&
-          firstAttentionTitleRect !== undefined &&
-          firstAttentionMarkerRect !== undefined &&
-          getComputedStyle(firstAttention).display === 'grid' &&
-          firstAttentionMarkerRect.right + 8 <= firstAttentionTitleRect.left &&
-          firstAttentionTitleRect.left - firstAttentionRect.left >= 20
-        );
-      const compactAttention =
-        rows.length <= 4 &&
-        rows.every((row) => row.getBoundingClientRect().height <= 132) &&
-        markerSeparatedFromCopy;
-      const statusbarHeight = statusbar?.getBoundingClientRect().height ?? 0;
-      const compactStatusbar = statusbarHeight >= 35 && statusbarHeight <= 37;
-      const topbarHeight = topbar?.getBoundingClientRect().height ?? 0;
-      const contentRect = contentScroll?.getBoundingClientRect();
-      const statusbarRect = statusbar?.getBoundingClientRect();
-      const shellAligned =
-        mainSurface instanceof HTMLElement &&
-        topbar instanceof HTMLElement &&
-        contentScroll instanceof HTMLElement &&
-        statusbar instanceof HTMLElement &&
-        topbarHeight >= 47 &&
-        topbarHeight <= 49 &&
-        contentRect !== undefined &&
-        statusbarRect !== undefined &&
-        Math.abs(contentRect.bottom - statusbarRect.top) <= 1;
-      const activeWorkRect = activeWorkCard?.getBoundingClientRect();
-      const summaryRects = summaryCards.map((card) => card.getBoundingClientRect());
-      const activeWorkFirst =
-        activeWorkCard instanceof HTMLElement &&
-        summaryGrid instanceof HTMLElement &&
-        summaryCards.length === 3 &&
-        activeWorkRect !== undefined &&
-        activeWorkRect.height >= 178 &&
-        activeWorkRect.height <= 182 &&
-        summaryRects.every((rect) => rect.height >= 74 && rect.height <= 78) &&
-        activeWorkRect.top + 1 < Math.min(...summaryRects.map((rect) => rect.top));
-      return {
-        ok: compactAttention && compactStatusbar && shellAligned && activeWorkFirst,
-        attentionCount: rows.length,
-        attentionHeights: rows.map((row) => row.getBoundingClientRect().height),
-        attentionTitleOffset: firstAttentionRect === undefined || firstAttentionTitleRect === undefined
-          ? null
-          : firstAttentionTitleRect.left - firstAttentionRect.left,
-        markerGap: firstAttentionMarkerRect === undefined || firstAttentionTitleRect === undefined
-          ? null
-          : firstAttentionTitleRect.left - firstAttentionMarkerRect.right,
-        markerSeparatedFromCopy,
-        statusbarHeight,
-        topbarHeight,
-        contentBottom: contentRect?.bottom,
-        statusbarTop: statusbarRect?.top,
-        activeWorkHeight: activeWorkRect?.height,
-        summaryHeights: summaryRects.map((rect) => rect.height),
-        activeWorkTop: activeWorkRect?.top,
-        summaryTops: summaryRects.map((rect) => rect.top),
-        compactAttention,
-        compactStatusbar,
-        shellAligned,
-        activeWorkFirst,
-      };
-    })()`,
-    true,
-  ) as Readonly<Record<string, unknown>> & { readonly ok: boolean };
-  if (!overviewResult.ok) {
-    throw new Error(`Round-two overview composition failed: ${JSON.stringify(overviewResult)}`);
-  }
-}
-
-async function verifyRoundFourSurfaceComposition(window: BrowserWindow): Promise<void> {
-  await activateView(window, "overview");
-  await delay(80);
-  const overviewResult = await window.webContents.executeJavaScript(
-    `(() => {
-      const grid = document.querySelector('.home-summary-grid');
-      const cards = Array.from(document.querySelectorAll('.home-summary-card'));
-      const activeWorkCard = document.querySelector('.home-active-work-card');
-      const permissionCard = document.querySelector('.home-permission-card');
-      const parseColor = (value) => {
-        const channels = value.match(/[\\d.]+/gu)?.map(Number) ?? [];
-        if (value.startsWith('color(srgb ') && channels.length >= 3) {
-          return {
-            red: channels[0] * 255,
-            green: channels[1] * 255,
-            blue: channels[2] * 255,
-            alpha: channels[3] ?? 1,
-          };
-        }
-        return {
-          red: channels[0] ?? -1,
-          green: channels[1] ?? -1,
-          blue: channels[2] ?? -1,
-          alpha: channels[3] ?? 1,
-        };
-      };
-      const cardStyles = cards.map((card) => getComputedStyle(card));
-      const cardBackgrounds = cardStyles.map((style) => style.backgroundColor);
-      const cardColors = cardBackgrounds.map(parseColor);
-      const activeIndex = cards.indexOf(activeWorkCard);
-      const summaryColors = cardColors.filter((_color, index) => index !== activeIndex);
-      const neutralSurface = (color) =>
-        Math.min(color.red, color.green, color.blue) >= 35 &&
-        Math.max(color.red, color.green, color.blue) <= 50 &&
-        Math.max(color.red, color.green, color.blue) - Math.min(color.red, color.green, color.blue) <= 2 &&
-        color.alpha >= 0.45 &&
-        color.alpha <= 0.65;
-      const summaryAlpha = summaryColors[0]?.alpha ?? -1;
-      const activeColor = activeIndex >= 0 ? cardColors[activeIndex] : null;
-      const gridStyle = grid instanceof HTMLElement ? getComputedStyle(grid) : null;
-      const coherentSummary =
-        grid instanceof HTMLElement &&
-        cards.length === 4 &&
-        activeWorkCard instanceof HTMLElement &&
-        permissionCard instanceof HTMLElement &&
-        gridStyle !== null &&
-        gridStyle.backgroundColor === 'rgba(0, 0, 0, 0)' &&
-        Number.parseFloat(gridStyle.borderTopWidth) === 0 &&
-        Number.parseFloat(gridStyle.columnGap) >= 9.5 &&
-        cardColors.every(neutralSurface) &&
-        summaryColors.every((color) => Math.abs(color.alpha - summaryAlpha) <= 0.02) &&
-        activeColor !== null &&
-        activeColor.alpha >= summaryAlpha &&
-        cardStyles.every((style) => Number.parseFloat(style.borderTopLeftRadius) >= 7);
-      return {
-        ok: coherentSummary,
-        coherentSummary,
-        gridBackground: gridStyle?.backgroundColor ?? null,
-        gridBorder: gridStyle?.borderTopWidth ?? null,
-        gridGap: gridStyle?.columnGap ?? null,
-        cardBackgrounds,
-        cardColors,
-        cardRadii: cardStyles.map((style) => style.borderTopLeftRadius),
-        activeIndex,
-        summaryAlpha,
-      };
-    })()`,
-    true,
-  ) as Readonly<Record<string, unknown>> & { readonly ok: boolean };
-  if (!overviewResult.ok) {
-    throw new Error(`Round-four overview surfaces failed: ${JSON.stringify(overviewResult)}`);
-  }
-
-  await verifyAgentConnectionSurface(window, activateView);
-  await activateView(window, "browser");
-  await delay(120);
-  const browserResult = await window.webContents.executeJavaScript(
-    `(() => {
-      const workbench = document.querySelector('.browser-workbench');
-      const sessionPanel = document.querySelector('.browser-session-panel');
-      const inspector = document.querySelector('.browser-direct-inspector');
-      const nav = document.querySelector('.browser-direct-nav');
-      const observation = document.querySelector('.browser-direct-observation');
-      const actions = document.querySelector('.browser-direct-actions');
-      const observationSections = Array.from(observation?.children ?? []);
-      const actionSections = Array.from(actions?.children ?? []);
-      const colorFloor = (value) => {
-        const channels = value.match(/[\\d.]+/gu)?.slice(0, 3).map(Number) ?? [];
-        return channels.length === 3 ? Math.min(...channels) : -1;
-      };
-      const sectionGap = (sections) => {
-        if (sections.length < 2) return 0;
-        const first = sections[0].getBoundingClientRect();
-        const second = sections[1].getBoundingClientRect();
-        return second.left - first.right;
-      };
-      const workbenchStyle = workbench instanceof HTMLElement ? getComputedStyle(workbench) : null;
-      const navStyle = nav instanceof HTMLElement ? getComputedStyle(nav) : null;
-      const observationStyle = observation instanceof HTMLElement ? getComputedStyle(observation) : null;
-      const actionStyle = actions instanceof HTMLElement ? getComputedStyle(actions) : null;
-      const sectionStyles = [...observationSections, ...actionSections].map((section) => getComputedStyle(section));
-      const coherentBrowser =
-        workbench instanceof HTMLElement &&
-        sessionPanel instanceof HTMLElement &&
-        inspector instanceof HTMLElement &&
-        nav instanceof HTMLElement &&
-        observation instanceof HTMLElement &&
-        actions instanceof HTMLElement &&
-        workbenchStyle !== null &&
-        navStyle !== null &&
-        observationStyle !== null &&
-        actionStyle !== null &&
-        Number.parseFloat(workbenchStyle.columnGap) >= 10 &&
-        Number.parseFloat(workbenchStyle.borderTopWidth) === 0 &&
-        workbenchStyle.backgroundColor === 'rgba(0, 0, 0, 0)' &&
-        colorFloor(navStyle.backgroundColor) >= 40 &&
-        Number.parseFloat(observationStyle.borderBottomWidth) === 0 &&
-        Number.parseFloat(actionStyle.borderBottomWidth) === 0 &&
-        sectionGap(observationSections) >= 10 &&
-        sectionGap(actionSections) >= 10 &&
-        sectionStyles.every((style) =>
-          Number.parseFloat(style.borderTopLeftRadius) >= 7 &&
-          colorFloor(style.backgroundColor) >= 40
-        );
-      return {
-        ok: coherentBrowser,
-        coherentBrowser,
-        workbenchGap: workbenchStyle?.columnGap ?? null,
-        workbenchBorder: workbenchStyle?.borderTopWidth ?? null,
-        workbenchBackground: workbenchStyle?.backgroundColor ?? null,
-        navBackground: navStyle?.backgroundColor ?? null,
-        observationBorder: observationStyle?.borderBottomWidth ?? null,
-        actionBorder: actionStyle?.borderBottomWidth ?? null,
-        observationGap: sectionGap(observationSections),
-        actionGap: sectionGap(actionSections),
-        sectionBackgrounds: sectionStyles.map((style) => style.backgroundColor),
-        sectionRadii: sectionStyles.map((style) => style.borderTopLeftRadius),
-      };
-    })()`,
-    true,
-  ) as Readonly<Record<string, unknown>> & { readonly ok: boolean };
-  if (!browserResult.ok) {
-    throw new Error(`Round-four browser surfaces failed: ${JSON.stringify(browserResult)}`);
-  }
-}
-
-async function verifyLargeSurfaceNeutrality(window: BrowserWindow): Promise<void> {
-  const views = [
-    "overview",
-    "tasks",
-    "agent",
-    "runs",
-    "settings",
-    "terminal",
-    "python",
-    "browser",
-    "computer",
-    "workflows",
-  ] as const;
-  const failures: Array<{ readonly view: string; readonly offenders: readonly unknown[] }> = [];
-
-  for (const view of views) {
-    await activateView(window, view);
-    if (view === "settings") {
-      await window.webContents.executeJavaScript(
-        `document.querySelector('[data-settings-tab="appearance"]')?.click()`,
-        true,
-      );
-    }
-    await delay(80);
-    const result = await window.webContents.executeJavaScript(
-      `(() => {
-        const root = document.querySelector('#view-${view}');
-        if (!(root instanceof HTMLElement)) {
-          return { ok: false, missing: true, offenders: [] };
-        }
-        const viewportArea = Math.max(1, window.innerWidth * window.innerHeight);
-        const ignoredSelector = [
-          'html', 'body', '#app', '.application-shell', '.content-shell', '.content-scroll',
-          '.view', '.view-content', 'img', 'canvas', 'video', 'iframe', 'svg'
-        ].join(',');
-        const parseColor = (value) => {
-          const match = value.match(/rgba?\\(([^)]+)\\)/u);
-          if (match === null) return null;
-          const parts = match[1].split(',').map((part) => Number.parseFloat(part.trim()));
-          if (parts.length < 3 || parts.slice(0, 3).some((part) => !Number.isFinite(part))) return null;
-          return {
-            red: parts[0],
-            green: parts[1],
-            blue: parts[2],
-            alpha: parts.length >= 4 && Number.isFinite(parts[3]) ? parts[3] : 1,
-          };
-        };
-        const describe = (element) => {
-          const id = element.id.length > 0 ? '#' + element.id : '';
-          const classes = Array.from(element.classList).slice(0, 4).map((name) => '.' + name).join('');
-          return element.tagName.toLowerCase() + id + classes;
-        };
-        const offenders = [];
-        for (const element of root.querySelectorAll('*')) {
-          if (!(element instanceof HTMLElement) || element.matches(ignoredSelector)) continue;
-          const style = getComputedStyle(element);
-          const rect = element.getBoundingClientRect();
-          const visible =
-            style.display !== 'none' &&
-            style.visibility !== 'hidden' &&
-            Number(style.opacity) > 0 &&
-            rect.width > 220 &&
-            rect.height > 70 &&
-            rect.width * rect.height >= viewportArea * 0.055;
-          if (!visible) continue;
-          const color = parseColor(style.backgroundColor);
-          if (color === null || color.alpha < 0.12) continue;
-          const channels = [color.red, color.green, color.blue];
-          const floor = Math.min(...channels);
-          const ceiling = Math.max(...channels);
-          const chroma = ceiling - floor;
-          const acceptable = floor >= 24 && chroma <= 18;
-          if (!acceptable) {
-            offenders.push({
-              element: describe(element),
-              background: style.backgroundColor,
-              size: [Math.round(rect.width), Math.round(rect.height)],
-              floor,
-              chroma,
-              text: (element.textContent ?? '').replace(/\\s+/gu, ' ').trim().slice(0, 100),
-            });
-          }
-        }
-        return { ok: offenders.length === 0, missing: false, offenders: offenders.slice(0, 20) };
-      })()`,
-      true,
-    ) as {
-      readonly ok: boolean;
-      readonly missing: boolean;
-      readonly offenders: readonly unknown[];
-    };
-    if (!result.ok) failures.push({ view, offenders: result.offenders });
-  }
-
-  if (failures.length > 0) {
-    throw new Error(`Large surface neutrality verification failed: ${JSON.stringify(failures)}`);
-  }
-}
-
-interface ReadabilityRequirement {
-  readonly view: string;
-  readonly selector: string;
-  readonly minimumFontSize?: number;
-  readonly minimumHeight?: number;
-}
-
-interface ReadabilityMeasurement extends ReadabilityRequirement {
-  readonly exists: boolean;
-  readonly visible: boolean;
-  readonly fontSize: number | null;
-  readonly height: number | null;
-  readonly text: string;
-}
-
-async function verifyCoreReadability(window: BrowserWindow): Promise<void> {
-  const requirements: readonly ReadabilityRequirement[] = [
-    { view: "overview", selector: ".topbar h1", minimumFontSize: 15 },
-    { view: "overview", selector: '.navigation-item[data-view="overview"]', minimumFontSize: 11.5, minimumHeight: 34 },
-    { view: "overview", selector: ".statusbar", minimumFontSize: 10.5, minimumHeight: 30 },
-    { view: "overview", selector: "#status-permission-action", minimumHeight: 28 },
-    { view: "overview", selector: ".home-hero p", minimumFontSize: 12 },
-    { view: "overview", selector: ".home-summary-card > small", minimumFontSize: 10.5 },
-    { view: "agent", selector: ".agent-authority-intro", minimumFontSize: 11.5 },
-    { view: "agent", selector: ".permission-segment button strong", minimumFontSize: 11.5 },
-    { view: "runs", selector: ".active-run-output", minimumFontSize: 11.5 },
-    { view: "runs", selector: ".run-row-identity span", minimumFontSize: 10 },
-    { view: "runs", selector: ".subview-tab", minimumFontSize: 10.5, minimumHeight: 32 },
-    { view: "settings", selector: ".settings-tab", minimumFontSize: 11, minimumHeight: 34 },
-    { view: "settings", selector: ".settings-pane.is-active .settings-row small", minimumFontSize: 10.5 },
-  ];
-  const measurements: ReadabilityMeasurement[] = [];
-
-  for (const view of [...new Set(requirements.map((requirement) => requirement.view))]) {
-    await activateView(window, view);
-    if (view === "settings") {
-      await window.webContents.executeJavaScript(
-        `document.querySelector('[data-settings-tab="appearance"]')?.click()`,
-        true,
-      );
-      await window.webContents.executeJavaScript(
-        "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
-        true,
-      );
-    }
-    const viewRequirements = requirements.filter((requirement) => requirement.view === view);
-    const measured = await window.webContents.executeJavaScript(
-      `(${JSON.stringify(viewRequirements)}).map((requirement) => {
-        const element = document.querySelector(requirement.selector);
-        if (!(element instanceof HTMLElement)) {
-          return { ...requirement, exists: false, visible: false, fontSize: null, height: null, text: '' };
-        }
-        const style = getComputedStyle(element);
-        const rect = element.getBoundingClientRect();
-        return {
-          ...requirement,
-          exists: true,
-          visible:
-            style.display !== 'none' &&
-            style.visibility !== 'hidden' &&
-            Number(style.opacity) > 0 &&
-            rect.width > 0 &&
-            rect.height > 0,
-          fontSize: Number.parseFloat(style.fontSize),
-          height: rect.height,
-          text: (element.textContent ?? '').replace(/\\s+/g, ' ').trim().slice(0, 120),
-        };
-      })`,
-      true,
-    ) as ReadabilityMeasurement[];
-    measurements.push(...measured);
-  }
-
-  const failures = measurements.filter((measurement) =>
-    !measurement.exists ||
-    !measurement.visible ||
-    (
-      measurement.minimumFontSize !== undefined &&
-      (measurement.fontSize === null || measurement.fontSize + 0.01 < measurement.minimumFontSize)
-    ) ||
-    (
-      measurement.minimumHeight !== undefined &&
-      (measurement.height === null || measurement.height + 0.01 < measurement.minimumHeight)
-    )
-  );
-  if (failures.length > 0) {
-    throw new Error(`Core readability verification failed: ${JSON.stringify(failures)}`);
-  }
-}
-
 async function captureRenderedPage(window: BrowserWindow): Promise<NativeImage> {
   await window.webContents.executeJavaScript(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`, true);
   return await window.webContents.capturePage(undefined, { stayHidden: true });
 }
 
-async function writeScreenshot(
-  image: NativeImage,
-  viewportLabel: string,
-  view: string,
-  audit: LayoutAudit,
-): Promise<ScreenshotRecord> {
+async function writeScreenshot(window: BrowserWindow, request: VisualMatrixCapture): Promise<ScreenshotRecord> {
+  const audit = await window.webContents.executeJavaScript(`${layoutAuditScript}(${JSON.stringify(request.view)})`, true) as LayoutAudit;
+  const image = await captureRenderedPage(window);
   const bytes = image.toPNG();
-  const relativePath = join(viewportLabel, `${view}.png`);
+  const relativePath = visualScreenshotPath(request.context, request.surface);
   const absolutePath = join(OUTPUT_ROOT, relativePath);
   await mkdir(dirname(absolutePath), { recursive: true });
   await writeFile(absolutePath, bytes);
   const size = image.getSize();
   return {
-    viewport: viewportLabel,
-    view,
-    relativePath: relativePath.replaceAll("\\", "/"),
-    width: size.width,
-    height: size.height,
-    sizeBytes: bytes.byteLength,
-    sha256: createHash("sha256").update(bytes).digest("hex"),
-    audit,
+    viewport: request.context.width + "x" + request.context.height,
+    language: request.context.language, theme: request.context.theme, mode: request.mode, zoom: 1,
+    view: request.surface, relativePath, width: size.width, height: size.height,
+    sizeBytes: bytes.byteLength, sha256: createHash("sha256").update(bytes).digest("hex"), audit,
   };
 }
 
 function issuesFor(record: ScreenshotRecord): readonly VisualIssue[] {
   const issues: VisualIssue[] = [];
   const audit = record.audit;
-  // A locale, profile or surface suffix names the same registry view, so the
-  // suffixes come off before the id is derived rather than being listed one
-  // by one as each new capture is added.
-  const base = record.view.replace(/-zh-CN$/u, "").replace(/-l4$/u, "");
-  const expectedView = base.startsWith("tasks-") ? "tasks" : base;
-  const expectedViewId = `view-${expectedView}`;
+  const expectedViewId = `view-${audit.view}`;
 
   if (audit.activeViewIds.length !== 1 || audit.activeViewIds[0] !== expectedViewId) {
     issues.push({
@@ -3510,520 +2052,45 @@ function issuesFor(record: ScreenshotRecord): readonly VisualIssue[] {
   return issues;
 }
 
-async function captureViewport(
-  window: BrowserWindow,
-  width: number,
-  height: number,
-  views: readonly string[],
-): Promise<readonly ScreenshotRecord[]> {
-  window.setContentSize(width, height, false);
-  await delay(120);
-  await window.webContents.executeJavaScript("Promise.all(document.querySelector('.application-shell').getAnimations().map(animation => animation.finished.catch(() => {})))", true);
-  if (width === 1040) {
-    const narrowShellLayout = await window.webContents.executeJavaScript(`(() => {
-      const shell = document.querySelector('.application-shell');
-      const sidebar = document.querySelector('.sidebar');
-      const main = document.querySelector('.main-surface');
-      return { viewportWidth: innerWidth, gridColumns: getComputedStyle(shell).gridTemplateColumns,
-        sidebarRight: sidebar.getBoundingClientRect().right, mainLeft: main.getBoundingClientRect().left,
-        gap: main.getBoundingClientRect().left - sidebar.getBoundingClientRect().right };
-    })()`, true) as { readonly gap: number };
-    await writeFile(join(OUTPUT_ROOT, "narrow-shell-layout.json"), JSON.stringify(narrowShellLayout, null, 2), "utf8");
-    if (Math.abs(narrowShellLayout.gap) > 1) {
-      throw new Error(`The narrow sidebar and main content do not meet: ${JSON.stringify(narrowShellLayout)}`);
-    }
-  }
-  const viewportLabel = `${width}x${height}`;
-  const screenshots: ScreenshotRecord[] = [];
-
-  for (const view of views) {
-    await activateView(window, view);
-    if (view === "tasks") {
-      await window.webContents.executeJavaScript(`(async () => {
-        document.querySelector('#task-detail-back')?.click();
-        document.querySelector('#task-project-grid').scrollTop = 0;
-        const deadline = Date.now() + 4000;
-        while (document.querySelector('#toast')?.hidden === false && Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 25));
-        }
-      })()`, true);
-    }
-    const audit = await window.webContents.executeJavaScript(
-      `${layoutAuditScript}(${JSON.stringify(view)})`,
-      true,
-    ) as LayoutAudit;
-    const image = await captureRenderedPage(window);
-    screenshots.push(await writeScreenshot(image, viewportLabel, view, audit));
-    if (view === "tasks") {
-      for (const surface of ["project-workspace", "conversation", "steps"]) {
-        const ready = await window.webContents.executeJavaScript(`(async () => {
-          const waitFor = async (predicate) => {
-            const deadline = Date.now() + 2500;
-            while (!predicate() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 25));
-            return predicate();
-          };
-          document.querySelector('#task-detail-back')?.click();
-          const project = document.querySelector('#task-project-select');
-          project.value = ${JSON.stringify(surface === "project-workspace" ? "project-visual-sovereign" : "")};
-          project.dispatchEvent(new Event('change', { bubbles: true }));
-          if (${JSON.stringify(surface)} === 'project-workspace') {
-            const ready = await waitFor(() => document.querySelector('#task-project-workspace')?.getAttribute('aria-busy') === 'false' &&
-              document.querySelector('#task-project-workspace-select')?.value === 'workspace-visual-sovereign');
-            document.querySelector('#task-project-grid').scrollTop = 0;
-            return ready;
-          }
-          const taskId = ${JSON.stringify(surface === "steps" ? "task-visual-agent-hub" : "task-visual-release")};
-          await waitFor(() => document.querySelector('#task-project-grid [data-task-id="' + taskId + '"]') instanceof HTMLButtonElement);
-          document.querySelector('#task-project-grid [data-task-id="' + taskId + '"]').click();
-          if (${JSON.stringify(surface)} === 'steps') {
-            const ready = await waitFor(() => document.querySelector('#task-detail-title')?.textContent?.trim() === 'Build task and Agent hub' &&
-              document.querySelectorAll('#task-detail-steps .task-step').length === 4);
-            if (!ready) return false;
-            document.querySelector('#task-steps-toggle').click();
-            return await waitFor(() => document.querySelector('#task-steps-popover').matches(':popover-open'));
-          }
-          const opened = await waitFor(() => document.querySelector('#task-detail-title')?.textContent?.trim() === 'Package and verify the next desktop release' &&
-            document.querySelectorAll('#task-message-list .task-message').length === 300);
-          if (!opened) return false;
-          for (const details of document.querySelectorAll('.task-technical-details, details.task-coordination-card')) details.open = false;
-          document.querySelector('#task-message-load-older').click();
-          const loaded = await waitFor(() => document.querySelectorAll('#task-message-list .task-message').length === 350);
-          document.querySelector('#task-message-list').scrollTop = 100;
-          document.querySelector('#task-project-grid').scrollTop = 0;
-          return loaded;
-        })()`, true) as boolean;
-        if (!ready) throw new Error(`Could not establish task ${surface} screenshot state.`);
-        const surfaceAudit = await window.webContents.executeJavaScript(`${layoutAuditScript}("tasks")`, true) as LayoutAudit;
-        screenshots.push(await writeScreenshot(await captureRenderedPage(window), viewportLabel, `tasks-${surface}`, surfaceAudit));
-      }
-      await window.webContents.executeJavaScript(`document.querySelector('#task-detail-back').click()`, true);
-    }
-  }
-  return screenshots;
-}
-
-
-/**
- * The connection page under Chinese labels, with the advanced fold open so the
- * proxy and routing fields are measured too. The language is restored before
- * returning so later passes still read English.
- */
-async function captureLocalizedAgentViewport(
-  window: BrowserWindow,
-  width: number,
-  height: number,
-): Promise<readonly ScreenshotRecord[]> {
-  window.setContentSize(width, height, false);
-  await delay(120);
-  await activateView(window, "agent");
-  const ready = await window.webContents.executeJavaScript(
-    `(async () => {
-      const language = document.querySelector('#ui-language');
-      if (!language) return false;
-      language.value = 'zh-CN';
-      language.dispatchEvent(new Event('change', { bubbles: true }));
-      const fold = document.querySelector('.agent-connection-advanced');
-      if (fold instanceof HTMLDetailsElement) fold.open = true;
-      const ready = () => document.querySelector('#secure-tunnel-start')?.textContent?.trim() === '启动连接';
-      const deadline = Date.now() + 2500;
-      while (!ready() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 25));
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      return ready();
-    })()`,
-    true,
-  ) as boolean;
-  if (!ready) {
-    throw new Error("The Chinese connection page did not render its translated controls.");
-  }
-  const audit = await window.webContents.executeJavaScript(
-    `${layoutAuditScript}("agent")`,
-    true,
-  ) as LayoutAudit;
-  const record = await writeScreenshot(
-    await captureRenderedPage(window),
-    `${width}x${height}`,
-    "agent-zh-CN",
-    audit,
-  );
-  await window.webContents.executeJavaScript(
-    `(async () => {
-      const language = document.querySelector('#ui-language');
-      language.value = 'en';
-      language.dispatchEvent(new Event('change', { bubbles: true }));
-      const fold = document.querySelector('.agent-connection-advanced');
-      if (fold instanceof HTMLDetailsElement) fold.open = false;
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    })()`,
-    true,
-  );
-  return [record];
-}
-
-async function captureL4PermissionViewport(
-  window: BrowserWindow,
-  width: number,
-  height: number,
-): Promise<readonly ScreenshotRecord[]> {
-  window.setContentSize(width, height, false);
-  await delay(120);
-  const viewportLabel = `${width}x${height}`;
-  const screenshots: ScreenshotRecord[] = [];
-  const originalProfile = await window.webContents.executeJavaScript(
-    `window.sovereign.getState().then((snapshot) => snapshot.permissionProfile)`,
-    true,
-  ) as string;
-  if (
-    originalProfile !== "observe" &&
-    originalProfile !== "workspace" &&
-    originalProfile !== "consequential"
-  ) {
-    throw new Error(`L4 screenshot fixture requires an L1-L3 starting profile, received ${originalProfile}.`);
-  }
-
-  await activateView(window, "settings");
-  const established = await window.webContents.executeJavaScript(
-    `(async () => {
-      const mode = document.querySelector('#ui-experience-mode');
-      const securityTab = document.querySelector('[data-settings-tab="security"]');
-      const workspace = document.querySelector(
-        '[data-settings-pane="security"] [data-permission-profile="workspace"]',
-      );
-      const toggle = document.querySelector('#settings-bypass-toggle');
-      const group = document.querySelector('#settings-permission-profiles');
-      if (
-        !(mode instanceof HTMLSelectElement) ||
-        !(securityTab instanceof HTMLButtonElement) ||
-        !(workspace instanceof HTMLButtonElement) ||
-        !(toggle instanceof HTMLButtonElement) ||
-        !(group instanceof HTMLElement)
-      ) {
-        return { ok: false, reason: 'L4 screenshot controls missing' };
-      }
-      mode.value = 'full';
-      mode.dispatchEvent(new Event('change', { bubbles: true }));
-      securityTab.click();
-      const waitFor = async (predicate) => {
-        const deadline = Date.now() + 2_000;
-        let snapshot = await window.sovereign.getState();
-        while (!predicate(snapshot) && Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 25));
-          snapshot = await window.sovereign.getState();
-        }
-        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        return snapshot;
-      };
-      let snapshot = await window.sovereign.getState();
-      if (snapshot.permissionProfile === 'bypass') {
-        toggle.click();
-        snapshot = await waitFor((candidate) => candidate.permissionProfile !== 'bypass');
-      }
-      if (snapshot.permissionProfile !== 'workspace') {
-        workspace.click();
-        snapshot = await waitFor((candidate) => candidate.permissionProfile === 'workspace');
-      }
-      toggle.click();
-      snapshot = await waitFor((candidate) =>
-        candidate.permissionProfile === 'bypass' &&
-        candidate.rememberedPermissionProfile === 'workspace'
-      );
-      const buttons = Array.from(group.querySelectorAll('[data-permission-profile]'));
-      const selectedCount = buttons.filter((button) =>
-        button.classList.contains('is-selected') || button.getAttribute('aria-pressed') === 'true'
-      ).length;
-      const scroll = document.querySelector('.content-scroll');
-      if (scroll instanceof HTMLElement) scroll.scrollTop = 0;
-      return {
-        ok:
-          snapshot.permissionProfile === 'bypass' &&
-          snapshot.rememberedPermissionProfile === 'workspace' &&
-          selectedCount === 0 &&
-          toggle.classList.contains('is-selected') &&
-          toggle.getAttribute('aria-pressed') === 'true' &&
-          group.classList.contains('shows-bypass-active') &&
-          group.getAttribute('aria-label') === 'ChatGPT permission level',
-        permissionProfile: snapshot.permissionProfile,
-        rememberedPermissionProfile: snapshot.rememberedPermissionProfile,
-        selectedCount,
-        l4Selected: toggle.classList.contains('is-selected'),
-      };
-    })()`,
-    true,
-  ) as {
-    readonly ok: boolean;
-    readonly reason?: string;
-    readonly permissionProfile?: string;
-    readonly rememberedPermissionProfile?: string;
-    readonly selectedCount?: number;
-    readonly l4Selected?: boolean;
-  };
-  if (!established.ok) {
-    throw new Error(`Could not establish L4 screenshot state: ${JSON.stringify(established)}`);
-  }
-
-  const settingsAudit = await window.webContents.executeJavaScript(
-    `${layoutAuditScript}("settings")`,
-    true,
-  ) as LayoutAudit;
-  screenshots.push(await writeScreenshot(
-    await captureRenderedPage(window),
-    viewportLabel,
-    "settings-l4",
-    settingsAudit,
-  ));
-
-  await activateView(window, "agent");
-  const agentState = await window.webContents.executeJavaScript(
-    `(() => {
-      const group = document.querySelector('#web-permission-profiles');
-      const toggle = document.querySelector('#web-bypass-toggle');
-      const buttons = Array.from(group?.querySelectorAll('[data-permission-profile]') ?? []);
-      const selectedCount = buttons.filter((button) =>
-        button.classList.contains('is-selected') || button.getAttribute('aria-pressed') === 'true'
-      ).length;
-      const scroll = document.querySelector('.content-scroll');
-      if (scroll instanceof HTMLElement) scroll.scrollTop = 0;
-      return {
-        ok:
-          group instanceof HTMLElement &&
-          toggle instanceof HTMLButtonElement &&
-          selectedCount === 0 &&
-          toggle.classList.contains('is-selected') &&
-          toggle.getAttribute('aria-pressed') === 'true' &&
-          group.classList.contains('shows-bypass-active') &&
-          group.getAttribute('aria-label') === 'ChatGPT permission level',
-        selectedCount,
-        l4Selected: toggle instanceof HTMLButtonElement
-          ? toggle.classList.contains('is-selected')
-          : false,
-      };
-    })()`,
-    true,
-  ) as {
-    readonly ok: boolean;
-    readonly selectedCount?: number;
-    readonly l4Selected?: boolean;
-  };
-  if (!agentState.ok) {
-    throw new Error(`Agent L4 screenshot state is inconsistent: ${JSON.stringify(agentState)}`);
-  }
-  const agentAudit = await window.webContents.executeJavaScript(
-    `${layoutAuditScript}("agent")`,
-    true,
-  ) as LayoutAudit;
-  screenshots.push(await writeScreenshot(
-    await captureRenderedPage(window),
-    viewportLabel,
-    "agent-l4",
-    agentAudit,
-  ));
-
-  await activateView(window, "settings");
-  const restored = await window.webContents.executeJavaScript(
-    `(async () => {
-      const securityTab = document.querySelector('[data-settings-tab="security"]');
-      const toggle = document.querySelector('#settings-bypass-toggle');
-      const originalProfile = ${JSON.stringify(originalProfile)};
-      if (!(securityTab instanceof HTMLButtonElement) || !(toggle instanceof HTMLButtonElement)) {
-        return false;
-      }
-      const waitFor = async (predicate) => {
-        const deadline = Date.now() + 2_000;
-        let snapshot = await window.sovereign.getState();
-        while (!predicate(snapshot) && Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 25));
-          snapshot = await window.sovereign.getState();
-        }
-        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        return snapshot;
-      };
-      securityTab.click();
-      toggle.click();
-      let snapshot = await waitFor((candidate) => candidate.permissionProfile === 'workspace');
-      if (originalProfile !== 'workspace') {
-        const originalButton = document.querySelector(
-          '[data-settings-pane="security"] [data-permission-profile="' + originalProfile + '"]',
-        );
-        if (!(originalButton instanceof HTMLButtonElement)) return false;
-        originalButton.click();
-        snapshot = await waitFor((candidate) => candidate.permissionProfile === originalProfile);
-      }
-      return snapshot.permissionProfile === originalProfile;
-    })()`,
-    true,
-  ) as boolean;
-  if (!restored) {
-    throw new Error(`Could not restore permission profile ${originalProfile} after L4 screenshots.`);
-  }
-
-  return screenshots;
-}
-
-interface ApprovalSmokeReport {
-  readonly width: number;
-  readonly height: number;
-  readonly scrollWidth: number;
-  readonly scrollHeight: number;
-  readonly bodyTextLength: number;
-  readonly toolName: string;
-  readonly allowLabel: string;
-  readonly denyLabel: string;
-  readonly consoleProblems: readonly string[];
-}
-
-async function runApprovalSmoke(): Promise<void> {
-  const window = new BrowserWindow({
-    width: 560,
-    height: 430,
-    useContentSize: true,
-    show: false,
-    paintWhenInitiallyHidden: true,
-    backgroundColor: "#1e1f22",
-    title: "Sovereign approval visual smoke",
-    webPreferences: {
-      preload: resolve(currentDirectory, "..", "preload", "approval-preload.cjs"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      webSecurity: true,
-      allowRunningInsecureContent: false,
-      devTools: false,
-      backgroundThrottling: false,
+async function writeVisualReport(
+  verificationScope: VisualReport["verificationScope"], screenshots: readonly ScreenshotRecord[], functionalErrors: readonly string[],
+  verificationStatus: VisualReport["verificationStatus"],
+): Promise<VisualReport> {
+  const issues = screenshots.flatMap((record) => issuesFor(record));
+  const report: VisualReport = {
+    verificationScope,
+    verificationStatus,
+    functionalErrors,
+    schemaVersion: "scr.visual-test/v2",
+    contexts: VISUAL_MATRIX,
+    generatedAt: new Date().toISOString(),
+    outputRoot: OUTPUT_ROOT,
+    screenshots,
+    issues,
+    summary: {
+      viewportCount: 2,
+      screenshotCount: screenshots.length,
+      errorCount: issues.filter((issue) => issue.severity === "error").length + functionalErrors.length,
+      warningCount: issues.filter((issue) => issue.severity === "warning").length,
     },
-  });
+  };
+  await writeFile(join(OUTPUT_ROOT, "report.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
 
-  const consoleProblems: string[] = [];
-  window.webContents.on("console-message", (event) => {
-    const detail = event as unknown as { readonly level?: string; readonly message?: string };
-    const message = detail.message?.trim();
-    if (message !== undefined && message.length > 0 && (detail.level === "error" || /uncaught|error|failed/i.test(message))) {
-      consoleProblems.push(`${detail.level ?? "console"} ${message}`);
-    }
-  });
-  window.webContents.on("render-process-gone", (_event, details) => {
-    consoleProblems.push(`render-process-gone: ${details.reason}`);
-  });
-  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-
-  try {
-    await window.loadURL(`${RENDERER_ORIGIN}approval.html`);
-    await window.webContents.executeJavaScript("localStorage.setItem('sovereign.ui.settings.v1', JSON.stringify({language:'en'}))", true);
-    await window.loadURL(`${RENDERER_ORIGIN}approval.html`);
-    const deadline = Date.now() + 5_000;
-    let ready = false;
-    while (Date.now() < deadline) {
-      ready = await window.webContents.executeJavaScript(
-        `document.querySelector("#approval-tool")?.textContent === ${JSON.stringify(visualApproval.toolName)} && document.querySelector("#approval-allow")?.textContent?.trim() === "Allow once"`,
-        true,
-      ) as boolean;
-      if (ready) {
-        break;
-      }
-      await delay(25);
-    }
-    if (!ready) {
-      throw new Error("Approval renderer did not reach its expected state.");
-    }
-
-    const report = await window.webContents.executeJavaScript(
-      `(() => ({
-        width: window.innerWidth,
-        height: window.innerHeight,
-        scrollWidth: document.documentElement.scrollWidth,
-        scrollHeight: document.documentElement.scrollHeight,
-        bodyTextLength: (document.body?.innerText ?? "").trim().length,
-        toolName: document.querySelector("#approval-tool")?.textContent ?? "",
-        allowLabel: document.querySelector("#approval-allow")?.textContent?.trim() ?? "",
-        denyLabel: document.querySelector("#approval-deny")?.textContent?.trim() ?? "",
-      }))()`,
-      true,
-    ) as Omit<ApprovalSmokeReport, "consoleProblems">;
-    const completed: ApprovalSmokeReport = { ...report, consoleProblems };
-
-    if (
-      completed.width !== 560 ||
-      completed.height !== 430 ||
-      completed.scrollWidth > completed.width ||
-      completed.bodyTextLength < 80 ||
-      completed.toolName !== visualApproval.toolName ||
-      completed.allowLabel !== "Allow once" ||
-      completed.denyLabel !== "Deny" ||
-      completed.consoleProblems.length > 0
-    ) {
-      throw new Error(`Approval window smoke failed: ${JSON.stringify(completed)}`);
-    }
-
-    await writeFile(
-      join(OUTPUT_ROOT, "approval-smoke.json"),
-      `${JSON.stringify(completed, null, 2)}\n`,
-      "utf8",
-    );
-    const states: unknown[] = [];
-    for (const [width, height, scale] of [[560,430,1], [560,430,1.95], [480,340,1], [480,340,1.95]] as const) {
-      window.setContentSize(width, height, false);
-      await window.webContents.executeJavaScript(`localStorage.setItem('sovereign.ui.settings.v1', JSON.stringify({language:'zh-CN',fontScale:${scale === 1 ? 1 : 1.3},uiScale:${scale === 1 ? 1 : 1.5}}))`, true);
-      for (const state of ['pending', 'flood', 'expired', 'failure', 'unavailable'] as const) {
-        const request = { ...visualApproval, burstDetected: state === 'flood', expiresAt: new Date(Date.now() + (state === 'expired' ? -1_000 : 30_000)).toISOString() };
-        const decisions: unknown[] = [];
-        ipcMain.removeHandler(IPC_CHANNELS.approvalGetCurrent);
-        ipcMain.handle(IPC_CHANNELS.approvalGetCurrent, () => state === 'unavailable' ? null : request);
-        ipcMain.removeHandler(IPC_CHANNELS.approvalResolve);
-        ipcMain.handle(IPC_CHANNELS.approvalResolve, (_event, id: unknown, decision: unknown) => {
-          if (id !== request.id) throw new Error('Approval request id changed');
-          decisions.push(decision);
-          if (state === 'failure') throw new Error('Isolated approval submission failure');
-        });
-        await window.loadURL(`${RENDERER_ORIGIN}approval.html`);
-        await delay(100);
-        if (state === 'failure') {
-          await window.webContents.executeJavaScript("document.querySelector('#approval-allow').click()", true);
-          await delay(100);
-        }
-        const layout = await window.webContents.executeJavaScript(`(() => {
-          const buttons = [...document.querySelectorAll('.approval-actions button')].filter(el => !el.hidden);
-          const feedback = document.querySelector('#approval-feedback');
-          const content = document.querySelector('.approval-content');
-          return {
-            visibleButtons: buttons.length, disabled: buttons.every(el => el.disabled),
-            buttonsFit: buttons.every(el => { const r=el.getBoundingClientRect(); return r.left>=0 && r.top>=0 && r.right<=innerWidth && r.bottom<=innerHeight; }),
-            horizontalOverflow: document.documentElement.scrollWidth>innerWidth,
-            contentHeight: content.clientHeight, detailPreserved: document.querySelector('#approval-detail').textContent===${JSON.stringify(request.detail)},
-            feedback:feedback.textContent, error:feedback.classList.contains('is-error'),
-            focus:document.activeElement.id, allow:document.querySelector('#approval-allow').textContent.trim(),
-          };
-        })()`, true) as { visibleButtons:number; disabled:boolean; buttonsFit:boolean; horizontalOverflow:boolean; contentHeight:number; detailPreserved:boolean; feedback:string; error:boolean; focus:string; allow:string };
-        const blocked = state === 'expired' || state === 'unavailable';
-        if (!layout.buttonsFit || layout.horizontalOverflow || layout.contentHeight < 24 || layout.disabled !== blocked ||
-          layout.visibleButtons !== (state === 'flood' ? 3 : 2) || (!blocked && !layout.detailPreserved) ||
-          layout.allow !== '仅允许这一次' || (state === 'failure' && (!layout.error || !layout.feedback))) {
-          throw new Error(`Approval ${state}/${width}/${scale} failed: ${JSON.stringify(layout)}`);
-        }
-        await writeFile(join(OUTPUT_ROOT, `approval-${state}-${width}-${scale}.png`), (await captureRenderedPage(window)).toPNG());
-        if (state === 'pending' || state === 'flood') {
-          await window.webContents.executeJavaScript(`document.querySelector('#approval-${state === 'pending' ? 'allow' : 'drop'}').click()`, true);
-          await delay(30);
-          if (decisions.length !== 1 || decisions[0] !== (state === 'pending' ? 'allow-once' : 'drop-to-l1')) throw new Error('Approval decision changed');
-        }
-        states.push({ state, width, height, scale, ...layout, decisions });
-      }
-    }
-    await writeFile(join(OUTPUT_ROOT, 'approval-states.json'), JSON.stringify({ ok:true, states }, null, 2));
-  } finally {
-    ipcMain.removeHandler(IPC_CHANNELS.approvalGetCurrent);
-    ipcMain.handle(IPC_CHANNELS.approvalGetCurrent, () => visualApproval);
-    if (!window.isDestroyed()) {
-      await window.webContents.executeJavaScript("localStorage.removeItem('sovereign.ui.settings.v1')", true);
-      window.destroy();
-    }
-  }
+  return report;
 }
 
 async function run(): Promise<void> {
-  await rm(OUTPUT_ROOT, { recursive: true, force: true });
   await mkdir(OUTPUT_ROOT, { recursive: true });
   await app.whenReady();
   await registerRendererProtocol();
   registerMockIpc();
-  await runApprovalSmoke();
+  const scope = process.env.SCR_VISUAL_SCOPE;
+  const verificationScope = scope === "tasks" || scope === "checks" || scope === "workbench" ? scope : "all";
+  if (verificationScope === "all") await verifyApprovalWindows({
+    rendererOrigin: RENDERER_ORIGIN,
+    preloadPath: resolve(currentDirectory, "..", "preload", "approval-preload.cjs"),
+    outputRoot: OUTPUT_ROOT,
+  });
 
   const window = new BrowserWindow({
     width: 1360,
@@ -4035,7 +2102,7 @@ async function run(): Promise<void> {
     title: "Sovereign Code Runtime Visual Test",
     webPreferences: {
       preload: resolve(currentDirectory, "..", "preload", "preload.cjs"),
-      zoomFactor: 1.1,
+      zoomFactor: 1,
       offscreen: true,
       contextIsolation: true,
       nodeIntegration: false,
@@ -4082,150 +2149,73 @@ async function run(): Promise<void> {
       const key = 'sovereign.ui.settings.v1';
       let current = {};
       try { current = JSON.parse(localStorage.getItem(key) ?? '{}'); } catch {}
-      localStorage.setItem(key, JSON.stringify({ ...current, language: 'en', experienceMode: 'full', reducedMotion: false }));
+      localStorage.setItem(key, JSON.stringify({ ...current, language: 'en', theme: 'light', experienceMode: 'full', reducedMotion: false, uiScale: 1, fontScale: 1, sidebarCollapsed: false, startupView: 'overview' }));
     })()`,
     true,
   );
   await window.loadURL(`${RENDERER_ORIGIN}index.html`);
   await waitForRenderer(window, rendererProblems);
   await delay(120);
-  const verificationScope = process.env.SCR_VISUAL_SCOPE === "tasks" ? "tasks" : "all";
-  if (verificationScope === "all") {
-    const controlsVerification = await verifySharedControls(window, activateView, OUTPUT_ROOT);
-    await writeFile(join(OUTPUT_ROOT, "shared-controls.json"), JSON.stringify(controlsVerification, null, 2));
-    if (!controlsVerification.ok) throw new Error(`Shared controls verification failed: ${JSON.stringify(controlsVerification.failures)}`);
-    const overviewVerification = await verifyOverviewActivity(window, activateView);
-    await writeFile(
-      join(OUTPUT_ROOT, "overview-motion.json"),
-      `${JSON.stringify(overviewVerification, null, 2)}\n`,
-      "utf8",
-    );
-    if (!overviewVerification.ok || !overviewVerification.nativeWindowStable) {
-      throw new Error(
-        `Overview convergence verification failed: ${JSON.stringify(overviewVerification)}`,
-      );
-    }
+  const previews = await createVisualPreviewFixtures(window);
+  visualBrowserObservation = { ...visualBrowserObservation, screenshotBase64: previews.browser, screenshotMediaType: "image/jpeg" };
+  const desktopPreview = Buffer.from(previews.computer, "base64");
+  visualComputerObservation = { ...visualComputerObservation, screenshotBase64: previews.computer, screenshotMediaType: "image/jpeg",
+    screenshotBytes: desktopPreview.length, screenshotSha256: createHash("sha256").update(desktopPreview).digest("hex") };
+  await verifyInitialV2Navigation(window);
+  if (verificationScope === "workbench") {
+    console.log(JSON.stringify({ visualPhase: "workbench", outputRoot: OUTPUT_ROOT }));
+    const interaction = await verifyWorkbenchInteractions(window, activateVisualView);
+    await writeFile(join(OUTPUT_ROOT, "interaction-verification.json"), JSON.stringify(interaction, null, 2));
+    const errors = interaction.ok ? [] : ["Workbench interaction failed: " + JSON.stringify(interaction)];
+    await writeVisualReport(verificationScope, [], errors, "checks-only");
+    if (errors.length > 0) throw new Error(errors.join("\n"));
+    if (window.webContents.debugger.isAttached()) window.webContents.debugger.detach();
+    window.destroy();
+    return;
+  }
+  console.log(JSON.stringify({ visualPhase: verificationScope === "checks" ? "checks" : "matrix", outputRoot: OUTPUT_ROOT }));
+  const screenshots = verificationScope === "checks" ? [] : await captureV2VisualMatrix(window, request => writeScreenshot(window, request), verificationScope);
+  if (verificationScope !== "checks") await writeVisualReport(verificationScope, screenshots, [], "matrix-only");
+  console.log(JSON.stringify({ visualPhase: "interactions", screenshotCount: screenshots.length }));
+  await applyVisualContext(window, { language: "en", theme: "light", width: 1360, height: 860 });
+  await activateVisualView(window, "overview");
+  if (verificationScope !== "tasks") {
+    const controls = await verifySharedControls(window, activateVisualView, OUTPUT_ROOT);
+    await writeFile(join(OUTPUT_ROOT, "shared-controls.json"), JSON.stringify(controls, null, 2));
+    if (!controls.ok) throw new Error("Shared controls verification failed: " + JSON.stringify(controls));
+    await waitForRenderer(window, rendererProblems);
+    const overview = await verifyOverviewActivity(window);
+    await writeFile(join(OUTPUT_ROOT, "overview-verification.json"), JSON.stringify(overview, null, 2));
+    if (!overview.ok) throw new Error("Overview verification failed: " + JSON.stringify(overview));
+    await verifyPermissionLifecycle(window, () => waitForRenderer(window, rendererProblems));
+    await verifyAgentConnectionSurface(window);
+    await verifyGeminiConnection(window);
+    await verifyHistorySurfaces(window);
   }
   await window.webContents.insertCSS(
     "*, *::before, *::after { animation-duration: 0s !important; animation-delay: 0s !important; transition-duration: 0s !important; caret-color: transparent !important; }",
   );
-  if (verificationScope === "all") await verifyActivityView(window);
-  await activateView(window, "tasks");
-  const taskVerification = await verifyTaskHub(window);
-  await writeFile(join(OUTPUT_ROOT, "task-verification.json"), JSON.stringify(taskVerification, null, 2), "utf8");
+  await activateVisualView(window, "tasks");
   const functionalErrors: string[] = [];
-  if (!taskVerification.ok) functionalErrors.push(`Task and Agent hub verification failed: ${JSON.stringify(taskVerification)}`);
-  const workbenchVerification = await verifyTaskWorkbench(window);
-  await writeFile(join(OUTPUT_ROOT, "task-workbench-verification.json"), JSON.stringify(workbenchVerification, null, 2), "utf8");
-  if (!workbenchVerification.ok) functionalErrors.push(`Task workbench interaction failed: ${JSON.stringify(workbenchVerification)}`);
-  const projectWorkspaceVerification = await verifyProjectWorkspace(window);
-  await writeFile(join(OUTPUT_ROOT, "project-workspace.json"), JSON.stringify({ ...projectWorkspaceVerification, terminalRequests: visualTerminalRequests }, null, 2), "utf8");
-  if (!projectWorkspaceVerification.ok) functionalErrors.push(`Project working directory verification failed: ${JSON.stringify(projectWorkspaceVerification)}`);
-  if (visualTerminalRequests.length !== 1 || visualTerminalRequests[0]?.workspaceId !== "workspace-visual-sovereign-chosen" ||
-    visualTerminalRequests[0]?.root !== "C:\\Projects\\sovereign-task-workspace" || visualTerminalRequests[0]?.cwd !== "") {
-    functionalErrors.push(`Task terminal used an unexpected directory: ${JSON.stringify(visualTerminalRequests)}`);
+  const task = await verifyTaskHub(window);
+  await writeFile(join(OUTPUT_ROOT, "task-verification.json"), JSON.stringify(task, null, 2));
+  if (!task.ok) functionalErrors.push("Task verification failed: " + JSON.stringify(task));
+  const workbench = await verifyTaskWorkbench(window);
+  await writeFile(join(OUTPUT_ROOT, "task-workbench-verification.json"), JSON.stringify(workbench, null, 2));
+  if (!workbench.ok) functionalErrors.push("Task interaction failed: " + JSON.stringify(workbench));
+  const project = await verifyProjectWorkspace(window);
+  await writeFile(join(OUTPUT_ROOT, "project-workspace.json"), JSON.stringify({ ...project, terminalRequests: visualTerminalRequests }, null, 2));
+  if (!project.ok) functionalErrors.push("Project workspace verification failed: " + JSON.stringify(project));
+  if (visualTerminalRequests.length !== 1 || visualTerminalRequests[0]?.workspaceId !== "workspace-visual-sovereign-chosen"
+      || visualTerminalRequests[0]?.root !== "C:\\Projects\\sovereign-task-workspace" || visualTerminalRequests[0]?.cwd !== "") {
+    functionalErrors.push("Task terminal used an unexpected workspace: " + JSON.stringify(visualTerminalRequests));
   }
-  if (verificationScope === "all") {
-    await verifyPersistentL4RendererState(window, rendererProblems);
-    await verifyRoundTwoUiComposition(window);
-    await verifyRoundFourSurfaceComposition(window);
-    await verifyLargeSurfaceNeutrality(window);
-    await verifyCoreReadability(window);
-    await verifyPermissionSelectionRetention(window);
-    const interactionVerification = await verifyWorkbenchInteractions(window, activateView);
-    await writeFile(join(OUTPUT_ROOT, "interaction-verification.json"), JSON.stringify(interactionVerification, null, 2));
-    if (!interactionVerification.ok) throw new Error(`Workbench interaction verification failed: ${JSON.stringify(interactionVerification)}`);
+  if (verificationScope !== "tasks") {
+    const interaction = await verifyWorkbenchInteractions(window, activateVisualView);
+    await writeFile(join(OUTPUT_ROOT, "interaction-verification.json"), JSON.stringify(interaction, null, 2));
+    if (!interaction.ok) functionalErrors.push("Workbench interaction failed: " + JSON.stringify(interaction));
   }
-
-  const views = verificationScope === "tasks" ? ["tasks"] : await window.webContents.executeJavaScript(
-    `Array.from(document.querySelectorAll('.navigation-item[data-view]'))
-      .map((element) => element instanceof HTMLElement ? element.dataset.view : undefined)
-      .filter((value) => typeof value === 'string')`,
-    true,
-  ) as string[];
-  if (views.length === 0) {
-    throw new Error("The renderer view registry did not produce any navigable views.");
-  }
-
-  const screenshots = [
-    ...await captureViewport(window, 1360, 860, views),
-    ...verificationScope === "all" ? await captureL4PermissionViewport(window, 1360, 860) : [],
-    ...await captureViewport(window, 1040, 680, views),
-    ...verificationScope === "all" ? await captureL4PermissionViewport(window, 1040, 680) : [],
-  ];
-  if (verificationScope === "all") {
-    // Chinese labels are wider than their English source, and the connection
-    // page is the densest row of fields and inline buttons in the product, so
-    // it is where translated text runs out of room first. Both standard
-    // viewports, because a display running at 125% hands the renderer far
-    // fewer CSS pixels than the window's physical size suggests.
-    screenshots.push(...await captureLocalizedAgentViewport(window, 1360, 860));
-    screenshots.push(...await captureLocalizedAgentViewport(window, 1040, 680));
-  }
-  if (verificationScope === "tasks") {
-    window.setContentSize(1360, 860, false);
-    await activateView(window, "tasks");
-    const chineseProject = await window.webContents.executeJavaScript(`(async () => {
-      const language = document.querySelector('#ui-language');
-      language.value = 'zh-CN';
-      language.dispatchEvent(new Event('change', { bubbles: true }));
-      const project = document.querySelector('#task-project-select');
-      project.value = 'project-visual-sovereign';
-      project.dispatchEvent(new Event('change', { bubbles: true }));
-      const ready = () => document.querySelector('#task-project-workspace-label')?.textContent?.trim() === '此项目的工作目录' &&
-        document.querySelector('#task-project-workspace-choose')?.textContent?.trim() === '更改目录' &&
-        document.querySelector('#task-project-workspace-access summary')?.textContent?.trim() === '目录权限' &&
-        document.querySelector('#task-project-workspace')?.getAttribute('aria-busy') === 'false';
-      const deadline = Date.now() + 2500;
-      while (!ready() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 25));
-      document.querySelector('#task-project-grid').scrollTop = 0;
-      return ready();
-    })()`, true) as boolean;
-    if (!chineseProject) functionalErrors.push("The Chinese project working directory controls did not render correctly.");
-    const chineseAudit = await window.webContents.executeJavaScript(`${layoutAuditScript}("tasks")`, true) as LayoutAudit;
-    screenshots.push(await writeScreenshot(await captureRenderedPage(window), "1360x860", "tasks-zh-CN", chineseAudit));
-    for (const surface of ["conversation", "steps"]) {
-      const ready = await window.webContents.executeJavaScript(`(async () => {
-        document.querySelector('#task-project-grid [data-task-id="task-visual-agent-hub"]').click();
-        const deadline = Date.now() + 2500;
-        const ready = () => document.querySelector('#task-detail-pane').hidden === false &&
-          document.querySelector('#task-detail-pane').getAttribute('aria-busy') !== 'true' &&
-          document.querySelector('#task-detail-layout').hidden === false &&
-          document.querySelector('#task-detail-title')?.textContent?.trim() === 'Build task and Agent hub' &&
-          document.querySelector('#task-message-send')?.textContent?.trim() === '发送消息';
-        while (!ready() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 25));
-        if (!ready()) return false;
-        if (${JSON.stringify(surface)} === 'steps') {
-          document.querySelector('#task-steps-toggle').click();
-          await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-          return document.querySelector('#task-steps-popover').matches(':popover-open') &&
-            document.querySelector('#task-steps-title')?.textContent?.trim() === '任务步骤';
-        }
-        return true;
-      })()`, true) as boolean;
-      if (!ready) functionalErrors.push(`The Chinese task ${surface} did not render correctly.`);
-      const audit = await window.webContents.executeJavaScript(`${layoutAuditScript}("tasks")`, true) as LayoutAudit;
-      screenshots.push(await writeScreenshot(await captureRenderedPage(window), "1360x860", `tasks-${surface}-zh-CN`, audit));
-    }
-  }
-  const issues = screenshots.flatMap((record) => issuesFor(record));
-  const report: VisualReport = {
-    verificationScope,
-    functionalErrors,
-    schemaVersion: "scr.visual-test/v1",
-    generatedAt: new Date().toISOString(),
-    outputRoot: OUTPUT_ROOT,
-    screenshots,
-    issues,
-    summary: {
-      viewportCount: 2,
-      screenshotCount: screenshots.length,
-      errorCount: issues.filter((issue) => issue.severity === "error").length + functionalErrors.length,
-      warningCount: issues.filter((issue) => issue.severity === "warning").length,
-    },
-  };
-  await writeFile(join(OUTPUT_ROOT, "report.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
-  if (verificationScope === "all") await verifyInterfacePreferences(window);
+  const report = await writeVisualReport(verificationScope, screenshots, functionalErrors, verificationScope === "checks" ? "checks-only" : "complete");
 
   if (window.webContents.debugger.isAttached()) {
     window.webContents.debugger.detach();

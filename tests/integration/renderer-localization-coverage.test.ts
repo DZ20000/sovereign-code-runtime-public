@@ -2,8 +2,12 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
+import * as ts from "typescript";
 
 import { localizeSubtree } from "../../apps/desktop/src/renderer/localization.js";
+import { PHRASES } from "../../apps/desktop/src/renderer/localization-messages.js";
+import { V2_PHRASES } from "../../apps/desktop/src/renderer/v2-localization.js";
+import { permissionProfileDisplay } from "../../apps/desktop/src/renderer/connection-presentation.js";
 
 const RENDERER_ROOT = resolve(
   process.cwd(),
@@ -13,11 +17,6 @@ const RENDERER_ROOT = resolve(
   "renderer",
 );
 const LOCALIZATION_PATH = resolve(RENDERER_ROOT, "localization.ts");
-const LOCALIZATION_MESSAGES_PATH = resolve(RENDERER_ROOT, "localization-messages.ts");
-const TASK_BOARD_LOCALIZATION_PATH = resolve(
-  RENDERER_ROOT,
-  "task-board-localization.ts",
-);
 const CORE_VIEW_FILES = [
   "view-overview.ts",
   "view-agent.ts",
@@ -29,12 +28,11 @@ const CORE_VIEW_FILES = [
   "view-computer.ts",
   "view-workflows.ts",
   "view-settings.ts",
+  "view-gemini-connection.ts",
+  "view-approvals-audit.ts",
+  "workflow-step-presentation.ts",
+  "task-detail-panels.ts",
 ] as const;
-
-interface PhrasePair {
-  readonly english: string;
-  readonly chinese: string;
-}
 
 interface StaticCandidate {
   readonly file: string;
@@ -42,40 +40,64 @@ interface StaticCandidate {
   readonly value: string;
 }
 
-function decodeStringLiteral(value: string): string {
-  return JSON.parse(`"${value}"`) as string;
-}
-
-function phrasePairs(source: string): readonly PhrasePair[] {
-  return [
-    ...source.matchAll(
-      /\[\s*"((?:\\.|[^"\\])*)",\s*"((?:\\.|[^"\\])*)",?\s*\]/gu,
-    ),
-  ].map((match) => ({
-    english: decodeStringLiteral(match[1] ?? ""),
-    chinese: decodeStringLiteral(match[2] ?? ""),
-  }));
-}
-
 function normalizeMarkupText(value: string): string {
   return value.replaceAll("&amp;", "&").replace(/\s+/gu, " ").trim();
 }
 
-function staticCandidates(file: string): readonly StaticCandidate[] {
-  const source = readFileSync(resolve(RENDERER_ROOT, file), "utf8");
-  const candidates: StaticCandidate[] = [];
-  for (const match of source.matchAll(/>([^<>${}]+)</gu)) {
-    const value = normalizeMarkupText(match[1] ?? "");
-    if (/[A-Za-z]/u.test(value) && !/[{};]/u.test(value)) {
-      candidates.push({ file, kind: "text", value });
+function sourceTree(file: string): ts.SourceFile {
+  return ts.createSourceFile(file, readFileSync(resolve(RENDERER_ROOT, file), "utf8"), ts.ScriptTarget.Latest, true);
+}
+
+function approvalCopyCatalog(): {
+  readonly phrases: readonly (readonly [string, string])[];
+  readonly labelSources: ReadonlyMap<string, string>;
+} {
+  const phrases: (readonly [string, string])[] = [];
+  const labelSources = new Map<string, string>();
+  function visit(node: ts.Node): void {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "copy") {
+      const [english, chinese] = node.arguments;
+      if (english !== undefined && chinese !== undefined && ts.isStringLiteralLike(english) && ts.isStringLiteralLike(chinese)) {
+        phrases.push([english.text, chinese.text]);
+      }
     }
+    if (ts.isArrayLiteralExpression(node) && node.elements.length === 3) {
+      const [id, english, chinese] = node.elements;
+      if (id !== undefined && english !== undefined && chinese !== undefined &&
+          ts.isStringLiteralLike(id) && id.text.startsWith("v2-") &&
+          ts.isStringLiteralLike(english) && ts.isStringLiteralLike(chinese)) {
+        labelSources.set(id.text, english.text);
+        phrases.push([english.text, chinese.text]);
+      }
+    }
+    ts.forEachChild(node, visit);
   }
-  for (const match of source.matchAll(
-    /(?:aria-label|title|placeholder)="([^"]+)"/gu,
-  )) {
-    const value = normalizeMarkupText(match[1] ?? "");
-    if (/[A-Za-z]/u.test(value) && !value.includes("${")) {
-      candidates.push({ file, kind: "attribute", value });
+  visit(sourceTree("approvals-audit-controller.ts"));
+  return { phrases, labelSources };
+}
+
+function staticCandidates(file: string, labelSources?: ReadonlyMap<string, string>): readonly StaticCandidate[] {
+  const markup: string[] = [];
+  function visit(node: ts.Node): void {
+    if (ts.isTemplateExpression(node)) {
+      markup.push([node.head.text, ...node.templateSpans.map((span) => span.literal.text)].join("${expression}"));
+    } else if (ts.isStringLiteralLike(node)) {
+      markup.push(node.text);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceTree(file));
+  const candidates: StaticCandidate[] = [];
+  for (const source of markup) {
+    for (const match of source.matchAll(/<([^<>]+)>([^<>${}]+)(?=<)/gu)) {
+      const id = /(?:^|\s)id="([^"]+)"/u.exec(match[1] ?? "")?.[1];
+      // This controller owns its labels and replaces initial markup by element ID.
+      const value = normalizeMarkupText((id === undefined ? undefined : labelSources?.get(id)) ?? match[2] ?? "");
+      if (/[A-Za-z]/u.test(value) && !/[{};]/u.test(value)) candidates.push({ file, kind: "text", value });
+    }
+    for (const match of source.matchAll(/(?:aria-label|title|placeholder)="([^"]+)"/gu)) {
+      const value = normalizeMarkupText(match[1] ?? "");
+      if (/[A-Za-z]/u.test(value) && !value.includes("${")) candidates.push({ file, kind: "attribute", value });
     }
   }
   return candidates;
@@ -93,17 +115,15 @@ function isTechnicalOrDynamic(value: string): boolean {
 }
 
 describe("renderer localization coverage", () => {
-  const localizationSource = [
-    readFileSync(LOCALIZATION_PATH, "utf8"),
-    readFileSync(LOCALIZATION_MESSAGES_PATH, "utf8"),
-    readFileSync(TASK_BOARD_LOCALIZATION_PATH, "utf8"),
-  ].join("\n");
-  const phrases = phrasePairs(localizationSource);
+  const localizationSource = readFileSync(LOCALIZATION_PATH, "utf8");
+  // PHRASES already includes the task-board and connection catalogs, as at runtime.
+  const phrases = [...PHRASES, ...V2_PHRASES];
+  const approvalCopy = approvalCopyCatalog();
   const translations = new Map<string, Set<string>>();
-  for (const phrase of phrases) {
-    const values = translations.get(phrase.english) ?? new Set<string>();
-    values.add(phrase.chinese);
-    translations.set(phrase.english, values);
+  for (const [english, chinese] of phrases) {
+    const values = translations.get(english) ?? new Set<string>();
+    values.add(chinese);
+    translations.set(english, values);
   }
 
   it("localizes task step state and relative update copy reversibly", () => {
@@ -117,6 +137,10 @@ describe("renderer localization coverage", () => {
         ["failed", "失败"],
         ["skipped", "已跳过"],
         ["Updated 2 minutes ago", "更新于 2 分钟前"],
+        ["CPython 3.11.9 available", "CPython 3.11.9 可用"],
+        ["Python run succeeded", "Python 执行 · 成功"],
+        ["Python run cancelling", "Python 执行 · 正在取消"],
+        ["1920×1080 desktop", "1920×1080 桌面"],
       ] as const) {
         const textNode = {
           nodeType: 3,
@@ -133,7 +157,7 @@ describe("renderer localization coverage", () => {
     }
   });
 
-  it("localizes dynamic ChatGPT connection copy reversibly", () => {
+  it("localizes current connection and permission copy reversibly", () => {
     vi.stubGlobal("Node", { TEXT_NODE: 3 });
     vi.stubGlobal("document", { documentElement: { lang: "en" } });
     try {
@@ -158,15 +182,15 @@ describe("renderer localization coverage", () => {
           "已保存网桥 · https://sovereign.example.test/mcp",
         ],
         [
-          "Fallback ChatGPT bundle target · https://sovereign.example.test/mcp",
-          "备用 ChatGPT 连接包目标 · https://sovereign.example.test/mcp",
+          "Fallback MCP bundle target · https://sovereign.example.test/mcp",
+          "备用 MCP 连接包目标 · https://sovereign.example.test/mcp",
         ],
-        ["Connected · Open ChatGPT Connection", "已连接 · 打开 ChatGPT 连接"],
+        ["Gemini listener did not start.", "Gemini 监听未启动。"],
         ["Allow connected web agent to run terminal.session.create?", "允许已连接的网页 Agent 执行 terminal.session.create 吗？"],
         ["L3 Consequential · files.write", "L3 高影响 · files.write"],
         [
-          "Ask for high-risk actions · L3 · Change ChatGPT permission",
-          "高风险操作需确认 · L3 · 更改 ChatGPT 权限",
+          permissionProfileDisplay("consequential"),
+          "高风险操作需确认 · L3",
         ],
       ] as const) {
         const textNode = {
@@ -199,11 +223,14 @@ describe("renderer localization coverage", () => {
 
   it("maps static user-facing copy in the core desktop views", () => {
     const mapped = new Set(translations.keys());
+    const approvalMapped = new Set(approvalCopy.phrases.map(([english]) => english));
     const unmapped = new Map<string, StaticCandidate>();
     for (const file of CORE_VIEW_FILES) {
-      for (const candidate of staticCandidates(file)) {
+      const scopedLabels = file === "view-approvals-audit.ts" ? approvalCopy.labelSources : undefined;
+      for (const candidate of staticCandidates(file, scopedLabels)) {
         if (
           mapped.has(candidate.value) ||
+          (file === "view-approvals-audit.ts" && approvalMapped.has(candidate.value)) ||
           isTechnicalOrDynamic(candidate.value)
         ) {
           continue;

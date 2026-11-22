@@ -76,7 +76,7 @@ describe("Task web session continuity static guards", () => {
     );
   });
 
-  it("keeps the view idempotent and isolated from the shared UI refinement layer", () => {
+  it("keeps the view idempotent and bounded by the shared semantic stylesheet", () => {
     const renderer = source(
       "apps",
       "desktop",
@@ -84,10 +84,13 @@ describe("Task web session continuity static guards", () => {
       "renderer",
       "task-session-continuity-view.ts",
     );
-    const main = source("apps", "desktop", "src", "renderer", "main.ts");
+    const styles = source("apps", "desktop", "src", "renderer", "v2.css");
     expect(renderer).toContain("if (element.textContent !== value)");
     expect(renderer).toContain("if (root.className !== className)");
-    expect(main).toContain('import "./task-session-continuity.css"');
+    expect(styles).toContain(".task-session-continuity-grid");
+    expect(styles).toContain(".task-session-continuity-heading");
+    const detailValues = styles.match(/\.task-detail-information dd[^{}]*\{([^}]+)\}/u)?.[1];
+    expect(detailValues).toContain("overflow-wrap: anywhere");
   });
 
   it("keeps the new modules within a reviewable size", () => {

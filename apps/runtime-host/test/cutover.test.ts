@@ -378,6 +378,13 @@ describe("RuntimeCutoverGate", () => {
       promoted: false,
     });
     expect(gate.admit("state.get")).toBeTypeOf("function");
+    gate.admit("gemini.connection.read")();
+    gate.admit("approvals.list")();
+    for (const method of ["gemini.connection.configure", "gemini.connection.start", "gemini.connection.stop", "approvals.open"]) {
+      expect(() => gate.admit(method)).toThrowError(
+        expect.objectContaining<Partial<RuntimeError>>({ code: "POLICY_DENIED" }),
+      );
+    }
     expect(() => gate.admit("runtime.start")).toThrowError(
       expect.objectContaining<Partial<RuntimeError>>({ code: "POLICY_DENIED" }),
     );
@@ -407,6 +414,9 @@ describe("RuntimeCutoverGate", () => {
     expect(adapter.promotedCheckpointId).toBe("checkpoint-1");
     expect(adapter.promotedExternalRouteDesired).toBe(true);
     expect(gate.admit("runtime.start")).toBeTypeOf("function");
+    for (const method of ["gemini.connection.configure", "gemini.connection.start", "gemini.connection.stop", "approvals.open"]) {
+      gate.admit(method)();
+    }
 
     const canary = await gate.canary();
     expect(canary).toMatchObject({

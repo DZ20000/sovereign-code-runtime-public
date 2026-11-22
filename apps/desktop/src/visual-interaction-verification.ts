@@ -1,4 +1,5 @@
 import type { BrowserWindow } from "electron";
+import { clickNativeVisualControl } from "./visual-navigation.js";
 
 export async function verifyWorkbenchInteractions(
   window: BrowserWindow,
@@ -19,21 +20,7 @@ export async function verifyWorkbenchInteractions(
     if (detail !== undefined) details[name] = detail;
     if (!passed) throw new Error(`Workbench interaction failed: ${name}`);
   };
-  const click = async (selector: string): Promise<void> => {
-    const point = await evaluate<{ x: number; y: number }>(`(() => {
-      const element = document.querySelector(${JSON.stringify(selector)});
-      if (!(element instanceof HTMLElement)) throw new Error('Missing interaction control: ' + ${JSON.stringify(selector)});
-      element.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-      const rect = element.getBoundingClientRect();
-      const x = rect.x + rect.width / 2, y = rect.y + Math.min(rect.height / 2, 30);
-      if (rect.width <= 0 || rect.height <= 0 || x < 0 || x >= innerWidth || y < 0 || y >= innerHeight ||
-        !element.contains(document.elementFromPoint(x, y))) throw new Error('Unreachable interaction control: ' + ${JSON.stringify(selector)});
-      return { x, y };
-    })()`);
-    await window.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", buttons: 1, clickCount: 1 });
-    await window.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", buttons: 0, clickCount: 1 });
-    await settle();
-  };
+  const click = (selector: string): Promise<void> => clickNativeVisualControl(window, selector);
   const language = async (value: string): Promise<void> => {
     await evaluate(`(() => {
       const select = document.querySelector('#ui-language');
@@ -43,8 +30,14 @@ export async function verifyWorkbenchInteractions(
     await settle();
   };
   const field = async (selector: string, value: string): Promise<void> => {
+    for (let attempt=0; attempt<3; attempt+=1) {
+      const closed = await evaluate<boolean>("Boolean(document.querySelector(" + JSON.stringify(selector) + ")?.closest('details:not([open])'))");
+      if (!closed) break;
+      await click("details:not([open]):has(" + selector + ") > summary");
+    }
     await evaluate(`(() => {
       const input = document.querySelector(${JSON.stringify(selector)});
+      if (!(input instanceof HTMLElement) || !input.checkVisibility()) throw new Error('Field is not visible: ' + ${JSON.stringify(selector)});
       input.focus();
       input.value = ${JSON.stringify(value)};
       input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -75,7 +68,13 @@ export async function verifyWorkbenchInteractions(
     check("codeSurvivesChineseLocalization", await editorText() === pythonSource, await editorText());
     check("editorLabelStillLocalized", await evaluate("document.querySelector('#python-code-editor .cm-content').getAttribute('aria-label') === 'Python 任务编辑器'"));
     const syntaxContrast = await evaluate<{ minimum: number; samples: readonly unknown[] }>(`(() => {
-      const parseColor = color => color.match(/[\\d.]+/g).map(Number);
+      const canvas = document.createElement('canvas'); canvas.width=canvas.height=1;
+      const context = canvas.getContext('2d', {willReadFrequently:true});
+      const parseColor = color => {
+        context.clearRect(0,0,1,1); context.fillStyle=color; context.fillRect(0,0,1,1);
+        const rgba=context.getImageData(0,0,1,1).data;
+        return [rgba[0],rgba[1],rgba[2],rgba[3]/255];
+      };
       const luminance = color => {
         const rgb = color.slice(0, 3).map(value => {
           const channel = value / 255;
@@ -103,7 +102,8 @@ export async function verifyWorkbenchInteractions(
       });
       return { minimum: Math.min(...samples.map(sample => sample.ratio)), samples };
     })()`);
-    check("syntaxContrastMeetsNormalTextMinimum", Number.isFinite(syntaxContrast.minimum) && syntaxContrast.minimum >= 4.5, syntaxContrast);
+    checks.syntaxContrastMeetsNormalTextMinimum = Number.isFinite(syntaxContrast.minimum) && syntaxContrast.minimum >= 4.5;
+    details.syntaxContrastMeetsNormalTextMinimum = syntaxContrast;
     await language("en");
     const editedSource = `${pythonSource}\nprint(Path("Path"))`;
     await replacePython(editedSource);
@@ -112,6 +112,17 @@ export async function verifyWorkbenchInteractions(
     await click("#python-start-secondary");
     const submitted = await evaluate<string>("window.sovereign.invokeTool('visual.fixture.last-python-code', {})");
     check("submittedCodeMatchesVisibleCode", submitted === editedSource, submitted);
+    const pythonStartsBeforeTabs = await evaluate<number>("window.sovereign.invokeTool('visual.fixture.python-start-count', {})");
+    await click("#python-output-tab-stderr");
+    check("pythonOutputTabsPreserveDraft", await evaluate<boolean>("document.querySelector('#python-output-tab-stderr').getAttribute('aria-selected') === 'true' && document.querySelector('#python-live-stderr').checkVisibility() && !document.querySelector('#python-live-stdout').checkVisibility()") && await editorText() === editedSource);
+    await click("#python-refresh");
+    check("pythonRefreshPreservesOutputTab", await waitFor("!document.querySelector('#python-refresh').disabled && document.querySelector('#python-output-tab-stderr').getAttribute('aria-selected') === 'true' && document.querySelector('#python-live-stderr').checkVisibility()") && await editorText() === editedSource);
+    await click("#python-output-tab-stderr");
+    await window.webContents.debugger.sendCommand("Input.dispatchKeyEvent", { type:"keyDown", key:"ArrowLeft", code:"ArrowLeft", windowsVirtualKeyCode:37 });
+    await window.webContents.debugger.sendCommand("Input.dispatchKeyEvent", { type:"keyUp", key:"ArrowLeft", code:"ArrowLeft", windowsVirtualKeyCode:37 });
+    await settle();
+    check("pythonOutputKeyboardNavigation", await evaluate("document.activeElement === document.querySelector('#python-output-tab-stdout') && document.querySelector('#python-output-tab-stdout').getAttribute('aria-selected') === 'true' && document.querySelector('#python-live-stdout').checkVisibility() && !document.querySelector('#python-live-stderr').checkVisibility()"));
+    check("pythonOutputTabsNeverReplayRun", await evaluate<number>("window.sovereign.invokeTool('visual.fixture.python-start-count', {})") === pythonStartsBeforeTabs);
 
     await evaluate(`(() => {
       const container = document.createElement('div');
@@ -160,13 +171,27 @@ export async function verifyWorkbenchInteractions(
 
     await activateView(window, "terminal");
     check("terminalSelectedStateExposed", await waitFor("document.querySelector('[data-terminal-session-id=\"terminal-visual-session\"]') !== null"));
+    const terminalFixture = await evaluate<{ output: string }>("window.sovereign.invokeTool('terminal.session.read', { sessionId: 'terminal-visual-session' })");
     await click('[data-terminal-session-id="terminal-visual-session"]');
-    await settle();
-    originalTerminal = await evaluate<string>("document.querySelector('#terminal-output').textContent");
+    // A native click plus two animation frames does not await the controller's IPC read.
+    check("terminalSelectionAndInitialOutputReady", await waitFor(
+      "document.querySelector('[data-terminal-session-id=\"terminal-visual-session\"]')?.getAttribute('aria-pressed') === 'true' && document.querySelector('#terminal-output').textContent === " + JSON.stringify(terminalFixture.output),
+    ));
+    originalTerminal = terminalFixture.output;
     const terminalSource = Array.from({ length: 200 }, (_value, index) => `output line ${index + 1}`).join("\n");
     await evaluate(`window.sovereign.invokeTool('visual.fixture.terminal-output', { output: ${JSON.stringify(terminalSource)} })`);
     await click("#terminal-refresh");
-    check("terminalHasScrollableOutput", await waitFor("document.querySelector('#terminal-output').textContent.includes('output line 200') && document.querySelector('#terminal-output').scrollHeight > document.querySelector('#terminal-output').clientHeight"));
+    const terminalScrollable = await waitFor("document.querySelector('#terminal-output').textContent.includes('output line 200') && document.querySelector('#terminal-output').scrollHeight > document.querySelector('#terminal-output').clientHeight");
+    const terminalOutputEvidence = await evaluate(`(() => {
+      const output = document.querySelector('#terminal-output');
+      return { selected: document.querySelector('#terminal-session-list [aria-pressed=true]')?.dataset.terminalSessionId,
+        title: document.querySelector('#terminal-title').textContent,
+        outputTail: output.textContent.slice(-240), outputCharacters: output.textContent.length,
+        scrollHeight: output.scrollHeight, clientHeight: output.clientHeight,
+        scrollTop: output.scrollTop, visible: output.checkVisibility(),
+        overflowY: getComputedStyle(output).overflowY, activeView: document.querySelector('.app-view.is-active')?.id };
+    })()`);
+    check("terminalHasScrollableOutput", terminalScrollable, terminalOutputEvidence);
     await evaluate("document.querySelector('#terminal-output').scrollTop = 60");
     await evaluate(`window.sovereign.invokeTool('visual.fixture.terminal-output', { output: ${JSON.stringify(terminalSource + "\nnew output while reading history")} })`);
     await click("#terminal-refresh");
@@ -186,12 +211,35 @@ export async function verifyWorkbenchInteractions(
     check("browserElementsObserved", await waitFor("document.querySelector('#browser-element-list button') !== null"));
     await click("#browser-element-list button");
     check("browserElementPressedState", await evaluate("document.querySelector('#browser-element-list button[aria-pressed=true]') !== null"));
+    const browserSnapshot = () => evaluate<string>(`JSON.stringify({
+      revision:document.querySelector('#browser-revision').textContent,
+      text:document.querySelector('#browser-text').textContent,
+      screenshot:document.querySelector('#browser-preview').getAttribute('src'),
+      session:document.querySelector('#browser-session-list [aria-pressed=true]')?.dataset.browserSessionId,
+      element:document.querySelector('#browser-element-list [aria-pressed=true]')?.textContent
+    })`);
+    const beforeBrowserTabs = await browserSnapshot();
+    const browserOperationsBefore = await evaluate<number>("window.sovereign.invokeTool('visual.fixture.browser-operation-count', {})");
+    await click("#browser-screenshot-tab");
+    check("browserScreenshotTab", await evaluate("document.querySelector('#browser-screenshot-tab').getAttribute('aria-selected') === 'true' && document.querySelector('#browser-screenshot-panel').checkVisibility() && !document.querySelector('#browser-text-panel').checkVisibility()"));
+    check("browserFixturePreviewDecoded", await waitFor("document.querySelector('#browser-preview').complete && document.querySelector('#browser-preview').naturalWidth > 0"));
+    await window.webContents.debugger.sendCommand("Input.dispatchKeyEvent", { type:"keyDown", key:"ArrowLeft", code:"ArrowLeft", windowsVirtualKeyCode:37 });
+    await window.webContents.debugger.sendCommand("Input.dispatchKeyEvent", { type:"keyUp", key:"ArrowLeft", code:"ArrowLeft", windowsVirtualKeyCode:37 });
+    await settle();
+    check("browserTabKeyboardNavigation", await evaluate("document.activeElement === document.querySelector('#browser-text-tab') && document.querySelector('#browser-text-tab').getAttribute('aria-selected') === 'true' && document.querySelector('#browser-text-panel').checkVisibility() && !document.querySelector('#browser-screenshot-panel').checkVisibility()"));
+    check("browserTabsPreserveObservation", await browserSnapshot() === beforeBrowserTabs &&
+      await evaluate<number>("window.sovereign.invokeTool('visual.fixture.browser-operation-count', {})") === browserOperationsBefore);
     await activateView(window, "computer");
+    check("computerCaptureReady", await waitFor("(() => { const button=document.querySelector('#computer-empty-state:not([hidden]) #computer-observe-empty, #computer-observe:not([hidden])'); return button?.checkVisibility() && !button.disabled; })()"));
     await click("#computer-empty-state:not([hidden]) #computer-observe-empty, #computer-observe:not([hidden])");
     check("computerWindowsObserved", await waitFor("document.querySelector('#computer-window-list button') !== null"));
+    check("computerFixturePreviewDecoded", await waitFor("document.querySelector('#computer-preview').complete && document.querySelector('#computer-preview').naturalWidth > 0"));
     await click("#computer-window-list button");
     check("computerWindowPressedState", await evaluate("document.querySelector('#computer-window-list button[aria-pressed=true]') !== null"));
-    check("toolInputsHaveAccessibleNames", await evaluate(`['terminal-input', 'browser-url', 'browser-type-text', 'browser-expression', 'audit-search'].every(id => Boolean(document.getElementById(id)?.getAttribute('aria-label')))`));
+    check("toolInputsHaveAccessibleNames", await evaluate(`['terminal-input', 'browser-url', 'browser-type-text', 'browser-expression', 'v2-audit-search'].every(id => {
+      const control=document.getElementById(id);
+      return !!control?.getAttribute('aria-label')?.trim() || [...(control?.labels??[])].some(label=>!!label.querySelector('span')?.textContent.trim());
+    })`));
   } catch (error) {
     details.error = error instanceof Error ? error.stack ?? error.message : String(error);
   } finally {

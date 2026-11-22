@@ -14,6 +14,10 @@ This is a general gateway connection. It does not install private conversation p
 
 The bridge validates these token properties on each request. The local connection still determines workspace access, capabilities and approval policy. The bridge does not grant additional local permissions.
 
+## Desktop configuration
+
+Version 0.1.7 adds a Gemini tab under **AI Connections** with protected configuration, start/stop controls and the actual local listener state. See [desktop AI connections](desktop-ai-connections.md). The desktop bridge uses the current runtime connection internally; the command-line pairing below remains available independently.
+
 ## Run from a source checkout
 
 Build the gateway first:

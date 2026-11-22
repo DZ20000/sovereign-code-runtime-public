@@ -74,6 +74,8 @@ export class PythonController {
   #editorPromise: Promise<WorkbenchCodeEditor> | null = null;
   #liveRunId: string | null = null;
   #livePollTimer: number | null = null;
+  #outputTab: "stdout" | "stderr" = "stdout";
+  #displayedRun: DesktopRunRecord | null = null;
 
   constructor(options: PythonControllerOptions) {
     this.#api = options.api;
@@ -113,6 +115,19 @@ export class PythonController {
     requiredElement<HTMLButtonElement>("#python-live-cancel").addEventListener("click", () => {
       void this.#cancelLiveRun();
     });
+    for (const stream of ["stdout", "stderr"] as const) {
+      const tab = requiredElement<HTMLButtonElement>(`#python-output-tab-${stream}`);
+      tab.addEventListener("click", () => this.#selectOutput(stream));
+      tab.addEventListener("keydown", (event) => {
+        const next = event.key === "Home" ? "stdout" : event.key === "End" ? "stderr"
+          : event.key === "ArrowLeft" || event.key === "ArrowRight"
+            ? stream === "stdout" ? "stderr" : "stdout" : null;
+        if (next === null) return;
+        event.preventDefault();
+        this.#selectOutput(next, true);
+      });
+    }
+    this.#selectOutput("stdout");
   }
 
   async activate(): Promise<void> {
@@ -135,6 +150,7 @@ export class PythonController {
       return;
     }
     this.#liveRunId = candidate.id;
+    this.#clearDisplayedRun();
     void this.#refreshLiveRun();
   }
 
@@ -143,6 +159,8 @@ export class PythonController {
       return;
     }
     this.#refreshing = true;
+    const refreshButton = requiredElement<HTMLButtonElement>("#python-refresh");
+    refreshButton.disabled = true;
     try {
       this.#capabilities = await this.#api.invokeTool<DesktopPythonCapabilities>(
         "python.capabilities",
@@ -159,6 +177,7 @@ export class PythonController {
       this.#notify(error instanceof Error ? error.message : "Could not inspect Python.", true);
     } finally {
       this.#refreshing = false;
+      refreshButton.disabled = false;
     }
   }
 
@@ -213,7 +232,7 @@ export class PythonController {
         timeoutMs,
       });
       this.#liveRunId = run.id;
-      this.#renderLiveRun(run, true);
+      this.#renderLiveRun(run);
       this.#scheduleLiveRefresh(run);
       this.#onRunStarted?.(run);
       this.#notify(`Python run started: ${run.id.slice(0, 8)}. Live Console is open.`);
@@ -253,9 +272,11 @@ export class PythonController {
     }
     try {
       const run = await this.#api.getRun(runId);
-      this.#renderLiveRun(run, false);
+      if (runId !== this.#liveRunId) return;
+      this.#renderLiveRun(run);
       this.#scheduleLiveRefresh(run);
     } catch (error) {
+      if (runId !== this.#liveRunId) return;
       this.#clearLivePoll();
       const state = requiredElement<HTMLElement>("#python-live-state");
       state.textContent = "Live run unavailable";
@@ -273,7 +294,8 @@ export class PythonController {
     cancel.disabled = true;
     try {
       const run = await this.#api.cancelRun(runId);
-      this.#renderLiveRun(run, false);
+      if (runId !== this.#liveRunId) return;
+      this.#renderLiveRun(run);
       this.#scheduleLiveRefresh(run);
       this.#notify(run.cancelRequested ? "Python run cancellation requested." : "Python run is already complete.");
     } catch (error) {
@@ -299,29 +321,65 @@ export class PythonController {
     }
   }
 
-  #renderLiveRun(run: DesktopRunRecord, reveal: boolean): void {
-    const consolePanel = requiredElement<HTMLDetailsElement>("#python-live-console");
-    consolePanel.hidden = false;
-    if (reveal) {
-      consolePanel.open = true;
+  #selectOutput(stream: "stdout" | "stderr", focus = false): void {
+    this.#outputTab = stream;
+    for (const name of ["stdout", "stderr"] as const) {
+      const tab = requiredElement<HTMLButtonElement>(`#python-output-tab-${name}`);
+      tab.setAttribute("aria-selected", String(name === stream));
+      tab.tabIndex = name === stream ? 0 : -1;
+      requiredElement<HTMLElement>(`#python-live-${name}`).hidden = name !== stream;
     }
+    const output = requiredElement<HTMLElement>(`#python-live-${stream}`);
+    const empty = requiredElement<HTMLElement>("#python-live-empty");
+    empty.hidden = (output.textContent ?? "").length > 0;
+    empty.textContent = this.#displayedRun === null ? "Run output appears here."
+      : stream === "stdout"
+        ? ACTIVE_RUN_STATES.has(this.#displayedRun.state) ? "Waiting for stdout…" : "No stdout captured."
+        : ACTIVE_RUN_STATES.has(this.#displayedRun.state) ? "No stderr yet." : "No stderr captured.";
+    if (focus) requiredElement<HTMLButtonElement>(`#python-output-tab-${stream}`).focus();
+  }
+
+  #clearDisplayedRun(): void {
+    this.#clearLivePoll();
+    this.#displayedRun = null;
+    for (const stream of ["stdout", "stderr"] as const) {
+      requiredElement<HTMLElement>(`#python-live-${stream}`).textContent = "";
+    }
+    const state = requiredElement<HTMLElement>("#python-live-state");
+    state.textContent = "Python run pending";
+    state.className = "state-text";
+    requiredElement<HTMLElement>("#python-live-meta").textContent = "";
+    const identity = requiredElement<HTMLElement>("#python-live-run-id");
+    identity.textContent = "—";
+    identity.title = "";
+    requiredElement<HTMLButtonElement>("#python-live-cancel").disabled = true;
+    const details = requiredElement<HTMLButtonElement>("#python-live-details");
+    details.disabled = true;
+    delete details.dataset.runId;
+    this.#selectOutput(this.#outputTab);
+  }
+
+  #renderLiveRun(run: DesktopRunRecord): void {
+    this.#displayedRun = run;
     const active = ACTIVE_RUN_STATES.has(run.state);
     const displayState = run.cancelRequested && active ? "cancelling" : run.state;
     const state = requiredElement<HTMLElement>("#python-live-state");
     state.textContent = `Python run ${displayState}`;
     state.className = `state-text${run.state === "succeeded" ? " is-healthy" : ["failed", "timed-out", "interrupted"].includes(run.state) ? " is-error" : ""}`;
-    requiredElement<HTMLElement>("#python-live-run-id").textContent = run.id;
+    const identity = requiredElement<HTMLElement>("#python-live-run-id");
+    identity.textContent = run.id;
+    identity.title = run.id;
     requiredElement<HTMLElement>("#python-live-meta").textContent =
       `${run.kind} · ${formatDuration(run.durationMs)}${run.exitCode === null ? "" : ` · exit ${run.exitCode}`}`;
-    requiredElement<HTMLElement>("#python-live-stdout").textContent = run.stdout.length === 0
-      ? active ? "Waiting for stdout…" : "No stdout captured."
-      : run.stdout;
-    requiredElement<HTMLElement>("#python-live-stderr").textContent = run.stderr.length === 0
-      ? active ? "No stderr yet." : "No stderr captured."
-      : run.stderr;
+    requiredElement<HTMLElement>("#python-live-stdout").textContent = run.stdout;
+    requiredElement<HTMLElement>("#python-live-stderr").textContent = run.stderr;
+    const details = requiredElement<HTMLButtonElement>("#python-live-details");
+    details.dataset.runId = run.id;
+    details.disabled = false;
     const cancel = requiredElement<HTMLButtonElement>("#python-live-cancel");
     cancel.disabled = !active || run.cancelRequested;
     cancel.textContent = run.cancelRequested && active ? "Cancelling…" : "Cancel run";
+    this.#selectOutput(this.#outputTab);
   }
 
   #addArtifactPath(value: string): void {
@@ -352,6 +410,7 @@ export class PythonController {
       chip.className = "token-chip";
       const text = document.createElement("span");
       text.textContent = path;
+      text.dataset.noI18n = "";
       const remove = document.createElement("button");
       remove.type = "button";
       remove.dataset.artifactRemove = path;

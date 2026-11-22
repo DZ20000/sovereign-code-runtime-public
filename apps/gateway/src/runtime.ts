@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 export { refreshRegisteredGeminiConnection } from "./gemini-local-connection.js";
+export { createGeminiGatewayBridge } from "./gemini-gateway-bridge.js";
+export { createGeminiTokenVerifier, loadGeminiAuthorizationServer } from "./gemini-oauth.js";
 import {
   createServer as createHttpServer,
   type Server as HttpServer,
@@ -46,7 +48,7 @@ import { assertGatewayBearerToken } from "./bearer-token.js";
 
 // This is the public MCP/catalog cache identity. Bump it for every wire-visible
 // tool or CallToolResult contract change so external connectors must refresh.
-export const RUNTIME_VERSION = "0.1.6";
+export const RUNTIME_VERSION = "0.1.7";
 export type {
   GatewayDrainReport,
   GatewaySessionActivityEvent,

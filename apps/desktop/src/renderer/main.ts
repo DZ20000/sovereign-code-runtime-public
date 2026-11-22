@@ -1,17 +1,8 @@
-import "./styles.css";
-import "./workbench.css";
-import "./product-shell.css";
-import "./task-hub.css";
-import "./task-session-continuity.css";
-import "./ui-system.css";
-import "./ui-geometry.css";
-import "./ui-refinement.css";
-import "./task-board.css";
-import "./home-visualqa-restoration.css";
-import "./home-active-work-polish.css";
-import "./operate-shell-connection-polish.css";
-import "./ui-affordance.css";
-
+import "./tokens.css";
+import "./v2.css";
+import { applyTheme } from "./ui-theme.js";
+import { defaultUiSettings, normalizeUiSettings, type UiSettings, type UiScale, type UiFontScale } from "./interface-preferences.js";
+import { createApprovalsAuditController } from "./approvals-audit-controller.js";
 import type {
   DesktopAuditReceipt,
   DesktopHostStartupState,
@@ -39,6 +30,8 @@ import {
   type ActiveWorkItem,
 } from "./active-work-carousel.js";
 import { BrowserController } from "./browser-controller.js";
+import { createConnectionsController } from "./connections-controller.js";
+import { phaseLabels, permissionProfileLabels, permissionProfileDisplay } from "./connection-presentation.js";
 import { ComputerController } from "./computer-controller.js";
 import { PythonController } from "./python-controller.js";
 import { RunsController } from "./runs-controller.js";
@@ -50,7 +43,6 @@ import {
 import { mountApplicationShell } from "./shell.js";
 import { RendererUpdateSettlementPoller } from "./renderer-update-settlement.js";
 import {
-  taskHasLiveAgent,
   taskNeedsOperatorAction,
 } from "./task-board-model.js";
 import { taskProjectForTask } from "./task-project-terminal.js";
@@ -67,11 +59,11 @@ import {
   normalizePersistedView,
   resolveInitialView,
   type ExperienceMode,
-  type StartupViewPreference,
 } from "./navigation-state.js";
 import {
   DEFAULT_VIEW_ID,
   getViewDefinition,
+  normalizeViewId,
   isViewId,
   type ViewId,
 } from "./view-registry.js";
@@ -91,104 +83,17 @@ function requiredElement<T extends HTMLElement>(selector: string): T {
   return element;
 }
 
-const phaseLabels: Readonly<Record<DesktopRuntimeState["phase"], string>> = {
-  "setup-required": "Setup required",
-  stopped: "Stopped",
-  starting: "Starting",
-  running: "Running",
-  stopping: "Stopping",
-  error: "Error",
-};
 
-type UiStartupView = StartupViewPreference;
-type UiScale = 1 | 1.1 | 1.25 | 1.5;
-type UiFontScale = 1 | 1.1 | 1.2 | 1.3;
 type UiExperienceMode = ExperienceMode;
 type SettingsTab = "appearance" | "host" | "security" | "diagnostics";
-
-interface UiSettings {
-  readonly sidebarCollapsed: boolean;
-  readonly startupView: UiStartupView;
-  readonly refreshIntervalMs: 1000 | 3000 | 5000 | 10000;
-  readonly reducedMotion: boolean;
-  readonly uiScale: UiScale;
-  readonly fontScale: UiFontScale;
-  readonly language: UiLanguage;
-  readonly experienceMode: UiExperienceMode;
-}
-
 const UI_SETTINGS_KEY = "sovereign.ui.settings.v1";
 const LAST_VIEW_KEY = "sovereign.ui.last-view.v1";
 const LAST_SETTINGS_TAB_KEY = "sovereign.ui.last-settings-tab.v1";
-const LAST_RUNS_TAB_KEY = "sovereign.ui.last-runs-tab.v1";
 const LAST_RUN_OUTPUT_TAB_KEY = "sovereign.ui.last-run-output-tab.v1";
-const DEFAULT_UI_SETTINGS: UiSettings = {
-  sidebarCollapsed: false,
-  startupView: "overview",
-  refreshIntervalMs: 5000,
-  reducedMotion: false,
-  uiScale: 1.1,
-  fontScale: 1,
-  language: window.navigator.language.toLowerCase().startsWith("zh")
-    ? "zh-CN"
-    : "en",
-  experienceMode: "simple",
-};
-
+const DEFAULT_UI_SETTINGS = defaultUiSettings(window.navigator.language);
 function readUiSettings(): UiSettings {
-  try {
-    const raw = window.localStorage.getItem(UI_SETTINGS_KEY);
-    if (raw === null) {
-      return DEFAULT_UI_SETTINGS;
-    }
-    const parsed = JSON.parse(raw) as Partial<UiSettings>;
-    const refreshIntervalMs = [1000, 3000, 5000, 10000].includes(
-      parsed.refreshIntervalMs ?? 0,
-    )
-      ? (parsed.refreshIntervalMs as UiSettings["refreshIntervalMs"])
-      : DEFAULT_UI_SETTINGS.refreshIntervalMs;
-    const startupView =
-      parsed.startupView === "tasks" ||
-      parsed.startupView === "agent" ||
-      parsed.startupView === "runs" ||
-      parsed.startupView === "last"
-        ? parsed.startupView
-        : "overview";
-    const uiScale =
-      parsed.uiScale === 1 ||
-      parsed.uiScale === 1.1 ||
-      parsed.uiScale === 1.25 ||
-      parsed.uiScale === 1.5
-        ? parsed.uiScale
-        : DEFAULT_UI_SETTINGS.uiScale;
-    const fontScale =
-      parsed.fontScale === 1 ||
-      parsed.fontScale === 1.1 ||
-      parsed.fontScale === 1.2 ||
-      parsed.fontScale === 1.3
-        ? parsed.fontScale
-        : DEFAULT_UI_SETTINGS.fontScale;
-    const language =
-      parsed.language === "en" || parsed.language === "zh-CN"
-        ? parsed.language
-        : DEFAULT_UI_SETTINGS.language;
-    const experienceMode =
-      parsed.experienceMode === "full" || parsed.experienceMode === "simple"
-        ? parsed.experienceMode
-        : DEFAULT_UI_SETTINGS.experienceMode;
-    return {
-      sidebarCollapsed: parsed.sidebarCollapsed === true,
-      startupView,
-      refreshIntervalMs,
-      reducedMotion: parsed.reducedMotion === true,
-      uiScale,
-      fontScale,
-      language,
-      experienceMode,
-    };
-  } catch {
-    return DEFAULT_UI_SETTINGS;
-  }
+  try { return normalizeUiSettings(JSON.parse(window.localStorage.getItem(UI_SETTINGS_KEY) ?? "null"), DEFAULT_UI_SETTINGS); }
+  catch { return { ...DEFAULT_UI_SETTINGS }; }
 }
 
 let currentState: DesktopRuntimeState | null = null;
@@ -201,16 +106,17 @@ let latestCapabilities: readonly string[] = [];
 let capabilitySearchQuery = "";
 let capabilityLevelFilter: "all" | "observe" | "workspace" | "consequential" =
   "all";
-let auditSearchQuery = "";
-let auditOutcomeFilter = "all";
-let secureTunnelIdDraft: string | null = null;
-let secureTunnelIdDirty = false;
 let toastTimer: number | null = null;
 let pollTimer: number | null = null;
 let refreshCoordinator: RefreshCoordinator | null = null;
 let consecutivePollFailures = 0;
 let lastHostStartupPollAt = 0;
 let uiSettings = readUiSettings();
+let uiSettingsDraft = { ...uiSettings };
+let permissionScopeId: string | null = null;
+let permissionDraft: DesktopPermissionProfile | null = null;
+let permissionSaving = false;
+let permissionNavigationPending = false;
 let currentView: ViewId = DEFAULT_VIEW_ID;
 let currentRendererUpdateStatus: DesktopRendererUpdateStatus | null = null;
 let currentRuntimeCandidateUpdateStatus: RuntimeCandidateUpdateStatus | null =
@@ -234,6 +140,7 @@ const projectWorkspaceController = new TaskProjectWorkspaceController({
 const tasksController = new TasksController({
   api: window.sovereign,
   notify: showToast,
+  onRunScopeChanged: (taskId) => runsController.setTaskScope(taskId),
   onProjectSelected: (projectId) => projectWorkspaceController.selectProject(projectId),
   onSnapshotChanged: (snapshot) => {
     latestTaskWorkspace = snapshot;
@@ -261,6 +168,29 @@ const workflowController = new WorkflowController({
 const computerController = new ComputerController({
   api: window.sovereign,
   notify: showToast,
+});
+const connectionsController = createConnectionsController({
+  api: window.sovereign,
+  notify: showToast,
+  onStateChanged: renderState,
+  onConnectionsChanged: () => {
+    if (currentState !== null) renderHomeState(currentState);
+    renderRemoteHostState();
+  },
+  formatTimestamp,
+  renderPermissions: renderPermissionChoiceState,
+  copyConnectionBundle,
+});
+
+const approvalsAuditController = createApprovalsAuditController({
+  api: window.sovereign,
+  getLanguage: () => uiSettingsDraft.language,
+  notify: showToast,
+  onPendingCount: (count) => {
+    const target = requiredElement<HTMLElement>("#v2-pending-count");
+    target.textContent = count === null ? "Approvals unavailable" : count === 0 ? "No pending approvals" : `${count} pending approvals`;
+    target.dataset.tone = count === null ? "neutral" : count > 0 ? "warning" : "success";
+  },
 });
 
 async function openSelectedTaskProjectTerminal(): Promise<void> {
@@ -293,25 +223,23 @@ function openActiveWorkItem(item: ActiveWorkItem): void {
   void tasksController.openTask(item.taskId);
 }
 
-function applyActiveWorkSelection(
-  item: ActiveWorkItem | null,
-  total: number,
-  focusedIndex: number,
-): void {
-  const action = requiredElement<HTMLButtonElement>("#home-task-action");
-  const count = requiredElement<HTMLElement>("#home-active-work-count");
-  count.textContent = activeWorkPositionLabel(total, focusedIndex);
-  delete action.dataset.taskId;
-  if (item === null) {
-    action.dataset.openView = "tasks";
-    action.textContent = "Open tasks";
-    action.title = "Open Tasks";
-    return;
-  }
-  action.dataset.openView = "tasks";
-  action.dataset.taskId = item.taskId;
-  action.textContent = "Open task";
-  action.title = `${item.title} · ${action.textContent}`;
+function applyActiveWorkSelection(item: ActiveWorkItem | null, total: number, focusedIndex: number): void {
+  requiredElement<HTMLElement>("#home-active-work-count").textContent = total === 1 ? "1 item" : `${total} items`;
+  requiredElement<HTMLElement>("#v2-active-position").textContent = activeWorkPositionLabel(total, focusedIndex);
+  requiredElement<HTMLButtonElement>("#v2-active-previous").disabled = focusedIndex <= 0;
+  requiredElement<HTMLButtonElement>("#v2-active-next").disabled = focusedIndex < 0 || focusedIndex >= total - 1;
+  const task = latestTaskWorkspace?.projects.flatMap(project => project.tasks).find(candidate => candidate.id === item?.taskId);
+  const progress = task?.progress;
+  const track = requiredElement<HTMLElement>("#v2-active-progress");
+  const known = progress != null && progress.total != null && progress.current != null && progress.total > 0;
+  track.hidden = !known;
+  if (known) {
+    const percent = Math.max(0, Math.min(100, progress.current! / progress.total! * 100));
+    track.setAttribute("aria-valuenow", String(Math.round(percent)));
+    track.setAttribute("aria-valuemin", "0");
+    track.setAttribute("aria-valuemax", "100");
+    requiredElement<HTMLElement>("#v2-active-progress-fill").style.width = `${percent}%`;
+  } else track.removeAttribute("aria-valuenow");
 }
 
 const activeWorkCarousel = new ActiveWorkCarousel(
@@ -432,32 +360,20 @@ function applyReducedMotion(enabled: boolean): void {
 function applyExperienceMode(mode: UiExperienceMode): void {
   document.documentElement.dataset.experienceMode = mode;
   requiredElement<HTMLSelectElement>("#ui-experience-mode").value = mode;
-  if (mode !== "simple") {
-    return;
-  }
-  const activeView =
-    document.querySelector<HTMLElement>(".view.is-active")?.dataset.viewPanel;
-  if (
-    activeView === "terminal" ||
-    activeView === "python" ||
-    activeView === "browser" ||
-    activeView === "computer" ||
-    activeView === "workflows"
-  ) {
-    activateView("overview");
-  }
-  const activeSettingsPane = document.querySelector<HTMLElement>(
-    "[data-settings-pane].is-active",
-  )?.dataset.settingsPane;
-  if (activeSettingsPane === "diagnostics") {
-    setSettingsTab("appearance");
-  }
+  if (mode === "simple" && currentView !== "overview") activateView("overview");
+}
+function setExperienceMode(mode: UiExperienceMode): void {
+  uiSettings = { ...uiSettings, experienceMode: mode };
+  uiSettingsDraft = { ...uiSettingsDraft, experienceMode: mode };
+  persistUiSettings();
+  applyExperienceMode(mode);
 }
 
 function applyLanguage(language: UiLanguage): void {
   requiredElement<HTMLSelectElement>("#ui-language").value = language;
   localizeSubtree(appRoot, language);
   tasksController.rerenderSelectedDetail();
+  approvalsAuditController.refreshLabels();
 }
 
 function applyUiScale(scale: UiScale): void {
@@ -511,13 +427,13 @@ function applyFontScale(scale: UiFontScale): void {
 }
 
 function scheduleFontScaleRefresh(): void {
-  if (fontScaleApplyScheduled || uiSettings.fontScale === 1) {
+  if (fontScaleApplyScheduled || uiSettingsDraft.fontScale === 1) {
     return;
   }
   fontScaleApplyScheduled = true;
   window.requestAnimationFrame(() => {
     fontScaleApplyScheduled = false;
-    applyFontScale(uiSettings.fontScale);
+    applyFontScale(uiSettingsDraft.fontScale);
   });
 }
 
@@ -536,26 +452,30 @@ function startFontScaleObserver(): void {
   fontScaleObserver.observe(document.body, { childList: true, subtree: true });
 }
 
-function syncInterfaceSettings(): void {
-  applySidebarState(uiSettings.sidebarCollapsed);
-  applyReducedMotion(uiSettings.reducedMotion);
-  requiredElement<HTMLSelectElement>("#ui-scale").value = String(
-    uiSettings.uiScale,
-  );
-  requiredElement<HTMLSelectElement>("#ui-font-scale").value = String(
-    uiSettings.fontScale,
-  );
-  requiredElement<HTMLSelectElement>("#ui-startup-view").value =
-    uiSettings.startupView;
-  requiredElement<HTMLSelectElement>("#ui-refresh-interval").value = String(
-    uiSettings.refreshIntervalMs,
-  );
-  applyExperienceMode(uiSettings.experienceMode);
-  applyLanguage(uiSettings.language);
+function syncInterfaceSettings(applyMode = true): void {
+  const settings = uiSettingsDraft;
+  applySidebarState(settings.sidebarCollapsed);
+  applyReducedMotion(settings.reducedMotion);
+  applyTheme(settings.theme);
+  requiredElement<HTMLSelectElement>("#ui-scale").value = String(settings.uiScale);
+  requiredElement<HTMLSelectElement>("#ui-font-scale").value = String(settings.fontScale);
+  requiredElement<HTMLSelectElement>("#ui-startup-view").value = settings.startupView;
+  requiredElement<HTMLSelectElement>("#ui-refresh-interval").value = String(settings.refreshIntervalMs);
+  requiredElement<HTMLSelectElement>("#ui-experience-mode").value = settings.experienceMode;
+  if (applyMode) applyExperienceMode(settings.experienceMode);
+  applyLanguage(settings.language);
+}
+function saveInterfaceSettings(): void {
+  uiSettings = { ...uiSettingsDraft };
+  persistUiSettings();
+  syncInterfaceSettings();
+  schedulePolling();
+  showToast("Preferences saved.");
 }
 
 function setSidebarCollapsed(collapsed: boolean): void {
   uiSettings = { ...uiSettings, sidebarCollapsed: collapsed };
+  uiSettingsDraft = { ...uiSettingsDraft, sidebarCollapsed: collapsed };
   persistUiSettings();
   applySidebarState(collapsed);
 }
@@ -710,18 +630,10 @@ async function performPollRuntimeState(): Promise<void> {
   const backgroundRefreshes: Array<Promise<unknown>> = [
     runsController.refresh().catch(() => undefined),
     tasksController.refresh().catch(() => undefined),
+    connectionsController.refresh(),
   ];
-  const activeRunsPane = document.querySelector<HTMLElement>(
-    "[data-runs-pane].is-active",
-  )?.dataset.runsPane;
-  if (currentView === "runs" && activeRunsPane === "audit") {
-    backgroundRefreshes.push(
-      window.sovereign
-        .getAuditReceipts(100)
-        .then(renderAudit)
-        .catch(() => undefined),
-    );
-  }
+  backgroundRefreshes.push(approvalsAuditController.refresh());
+  if (currentView === "overview") backgroundRefreshes.push(window.sovereign.getAuditReceipts(100).then(renderAudit).catch(() => undefined));
   await Promise.all(backgroundRefreshes);
   await refreshActiveWorkbench().catch(() => undefined);
 }
@@ -766,15 +678,11 @@ function handleVisibilityChange(): void {
 }
 
 function resetInterfaceSettings(): void {
-  uiSettings = DEFAULT_UI_SETTINGS;
-  persistUiSettings();
-  syncInterfaceSettings();
-  applyUiScale(uiSettings.uiScale);
-  applyFontScale(uiSettings.fontScale);
-  schedulePolling();
-  showToast(
-    "UI preferences reset. Runtime and security settings were not changed.",
-  );
+  uiSettingsDraft = { ...DEFAULT_UI_SETTINGS };
+  syncInterfaceSettings(false);
+  applyUiScale(uiSettingsDraft.uiScale);
+  applyFontScale(uiSettingsDraft.fontScale);
+  showToast("Defaults previewed. Save preferences to keep these changes.");
 }
 
 interface RemoteHostReadiness {
@@ -788,6 +696,8 @@ function remoteHostReadiness(
   startup: DesktopHostStartupState,
 ): RemoteHostReadiness {
   const issues: string[] = [];
+  const geminiConfigured = connectionsController.geminiConfigured;
+  const chatgptConfigured = state.secureTunnel.tunnelId !== null;
   if (!startup.supported) {
     issues.push("Windows login startup is unavailable");
   } else if (!startup.enabled) {
@@ -799,10 +709,10 @@ function remoteHostReadiness(
   if (!state.unattendedWorkspaceAccess) {
     issues.push("Unattended workspace access is off");
   }
-  if (!state.secureTunnel.autoStart) {
+  if (!geminiConfigured && chatgptConfigured && !state.secureTunnel.autoStart) {
     issues.push("Tunnel auto-start is off");
   }
-  if (!state.secureTunnel.autoReconnect) {
+  if (!geminiConfigured && chatgptConfigured && !state.secureTunnel.autoReconnect) {
     issues.push("Connector restart supervision is off");
   }
   if (!startup.guardian.available) {
@@ -821,8 +731,7 @@ function remoteHostReadiness(
     startup.enabled &&
     state.autoStart &&
     state.unattendedWorkspaceAccess &&
-    state.secureTunnel.autoStart &&
-    state.secureTunnel.autoReconnect &&
+    (geminiConfigured || !chatgptConfigured || (state.secureTunnel.autoStart && state.secureTunnel.autoReconnect)) &&
     startup.guardian.available &&
     startup.guardian.closeToTray &&
     !startup.guardian.circuitOpen &&
@@ -831,35 +740,38 @@ function remoteHostReadiness(
   if (state.workspaceRoot === null) {
     issues.push("No workspace is authorized");
   }
-  if (!state.secureTunnel.clientAvailable) {
-    issues.push("tunnel-client.exe is unavailable");
-  } else if (!state.secureTunnel.executableTrusted) {
-    issues.push("The connector digest is not trusted");
-  }
-  if (state.secureTunnel.tunnelId === null) {
-    issues.push("Tunnel ID is missing");
-  }
-  if (!state.secureTunnel.hasRuntimeApiKey) {
-    issues.push("Tunnel runtime key is missing");
-  } else if (state.secureTunnel.runtimeApiKeyStorage !== "windows-protected") {
-    issues.push("Tunnel runtime key is not restart-safe");
-  }
-  if (
-    state.secureTunnel.controlPlaneProxyConfigured &&
-    state.secureTunnel.controlPlaneProxyStorage !== "windows-protected"
-  ) {
-    issues.push("Primary control-plane proxy is not restart-safe");
-  }
-  if (
-    state.secureTunnel.controlPlaneBackupProxyConfigured &&
-    state.secureTunnel.controlPlaneBackupProxyStorage !== "windows-protected"
-  ) {
-    issues.push("Backup control-plane proxy is not restart-safe");
-  }
+  if (!geminiConfigured && !chatgptConfigured) issues.push("No AI connection is configured");
+  if (!geminiConfigured && chatgptConfigured) {
+    if (!state.secureTunnel.clientAvailable) {
+      issues.push("tunnel-client.exe is unavailable");
+    } else if (!state.secureTunnel.executableTrusted) {
+      issues.push("The connector digest is not trusted");
+    }
+    if (state.secureTunnel.tunnelId === null) {
+      issues.push("Tunnel ID is missing");
+    }
+    if (!state.secureTunnel.hasRuntimeApiKey) {
+      issues.push("Tunnel runtime key is missing");
+    } else if (state.secureTunnel.runtimeApiKeyStorage !== "windows-protected") {
+      issues.push("Tunnel runtime key is not restart-safe");
+    }
+    if (
+      state.secureTunnel.controlPlaneProxyConfigured &&
+      state.secureTunnel.controlPlaneProxyStorage !== "windows-protected"
+    ) {
+      issues.push("Primary control-plane proxy is not restart-safe");
+    }
+    if (
+      state.secureTunnel.controlPlaneBackupProxyConfigured &&
+      state.secureTunnel.controlPlaneBackupProxyStorage !== "windows-protected"
+    ) {
+      issues.push("Backup control-plane proxy is not restart-safe");
+    }
 
+  }
   const connectionReady =
     state.workspaceRoot !== null &&
-    state.secureTunnel.clientAvailable &&
+    (geminiConfigured || (state.secureTunnel.clientAvailable &&
     state.secureTunnel.executableTrusted &&
     state.secureTunnel.tunnelId !== null &&
     state.secureTunnel.hasRuntimeApiKey &&
@@ -868,285 +780,21 @@ function remoteHostReadiness(
       state.secureTunnel.controlPlaneProxyStorage === "windows-protected") &&
     (!state.secureTunnel.controlPlaneBackupProxyConfigured ||
       state.secureTunnel.controlPlaneBackupProxyStorage ===
-        "windows-protected");
+        "windows-protected")));
   return { automationReady, connectionReady, issues };
 }
 
-type SimpleOverviewTone = "neutral" | "pending" | "success" | "error";
-type SimpleOverviewAction =
-  | "none"
-  | "choose-workspace"
-  | "start-runtime"
-  | "enable-host"
-  | "open-agent"
-  | "open-settings";
-
-function setSimpleOverviewTone(
-  element: HTMLElement,
-  tone: SimpleOverviewTone,
-): void {
-  element.dataset.tone = tone;
-}
-
-function renderSimpleOverviewState(
-  state: DesktopRuntimeState | null,
-  startup: DesktopHostStartupState | null,
-): void {
-  const title = requiredElement<HTMLElement>("#simple-overview-title");
-  const detail = requiredElement<HTMLElement>("#simple-overview-detail");
-  const badge = requiredElement<HTMLElement>("#simple-overview-badge");
-  const workspace = requiredElement<HTMLElement>("#simple-overview-workspace");
-  const runtime = requiredElement<HTMLElement>("#simple-overview-runtime");
-  const startupDetail = requiredElement<HTMLElement>(
-    "#simple-overview-startup",
-  );
-  const connection = requiredElement<HTMLElement>(
-    "#simple-overview-connection",
-  );
-  const session = requiredElement<HTMLElement>("#simple-overview-session");
-  const access = requiredElement<HTMLElement>("#simple-overview-access");
-  const accessDetail = requiredElement<HTMLElement>(
-    "#simple-overview-access-detail",
-  );
-  const primary = requiredElement<HTMLButtonElement>(
-    "#simple-overview-primary",
-  );
-
-  if (state === null) {
-    title.textContent = "Checking remote host…";
-    detail.textContent =
-      "Checking the computer, connection and unattended access.";
-    badge.textContent = "Checking…";
-    setSimpleOverviewTone(badge, "pending");
-    workspace.textContent = "Not selected";
-    runtime.textContent = "Checking…";
-    setSimpleOverviewTone(runtime, "pending");
-    startupDetail.textContent = "Checking Windows login startup.";
-    connection.textContent = "Checking…";
-    setSimpleOverviewTone(connection, "pending");
-    session.textContent = "No active ChatGPT session";
-    access.textContent = "Read only · L1";
-    setSimpleOverviewTone(access, "pending");
-    accessDetail.textContent = "Workspace tasks are off";
-    primary.textContent = "Checking…";
-    primary.dataset.simpleOverviewAction =
-      "none" satisfies SimpleOverviewAction;
-    primary.disabled = true;
-    return;
-  }
-
-  workspace.toggleAttribute("data-no-i18n", state.workspaceRoot !== null);
-  workspace.textContent = state.workspaceRoot ?? "Not selected";
-  workspace.title = state.workspaceRoot ?? "";
-  const runtimeLabel = phaseLabels[state.phase];
-  runtime.textContent = runtimeLabel;
-  setSimpleOverviewTone(
-    runtime,
-    state.phase === "running"
-      ? "success"
-      : state.phase === "error"
-        ? "error"
-        : "pending",
-  );
-  startupDetail.textContent =
-    startup === null
-      ? "Checking Windows login startup."
-      : startup.enabled
-        ? "Starts after Windows sign-in"
-        : "Windows login startup is off";
-
-  const tunnelDisplay = tunnelDisplayState(state);
-  connection.textContent = tunnelDisplay.label;
-  setSimpleOverviewTone(connection, tunnelDisplay.tone);
-  session.textContent =
-    state.sessionCount > 0
-      ? `ChatGPT connected · ${state.sessionCount}`
-      : "No active ChatGPT session";
-
-  access.textContent = permissionProfileDisplay(state.permissionProfile);
-  setSimpleOverviewTone(
-    access,
-    state.permissionProfile === "bypass"
-      ? "error"
-      : state.permissionProfile === "observe"
-        ? "pending"
-        : "success",
-  );
-  accessDetail.textContent =
-    state.workspaceRoot === null
-      ? "Choose a workspace to bind this permission"
-      : state.permissionProfile === "bypass"
-        ? "Per-action confirmation is off"
-        : state.unattendedWorkspaceAccess
-          ? "Permission unchanged · workspace restored after sign-in"
-          : "Permission remembered for this workspace";
-
-  let action: SimpleOverviewAction = "none";
-  let actionLabel = "Checking…";
-  let tone: SimpleOverviewTone = "pending";
-  if (state.workspaceRoot === null) {
-    title.textContent = "Choose a workspace";
-    detail.textContent = "Authorize the folder this computer should work in.";
-    badge.textContent = "Setup needed";
-    action = "choose-workspace";
-    actionLabel = "Choose workspace";
-  } else if (state.phase === "error") {
-    title.textContent = "Remote host needs attention";
-    detail.textContent =
-      "The runtime needs attention before remote tasks can run.";
-    badge.textContent = "Problem";
-    tone = "error";
-    action = "start-runtime";
-    actionLabel = "Restart runtime";
-  } else if (startup === null) {
-    title.textContent = "Checking remote host…";
-    detail.textContent =
-      "Checking the computer, connection and unattended access.";
-    badge.textContent = "Checking…";
-  } else {
-    const readiness = remoteHostReadiness(state, startup);
-    const automationReady = readiness.automationReady;
-    const connectionReady = readiness.connectionReady;
-    if (!automationReady) {
-      title.textContent = "Finish unattended setup";
-      detail.textContent =
-        "Complete setup once; Sovereign will reconnect automatically after Windows sign-in.";
-      badge.textContent = "Setup needed";
-      action = startup.supported ? "enable-host" : "open-settings";
-      actionLabel = startup.supported
-        ? "Enable unattended host"
-        : "Review setup";
-    } else if (!connectionReady) {
-      title.textContent = "Finish connection setup";
-      detail.textContent =
-        "Complete the ChatGPT connection once; Sovereign will keep it available after sign-in.";
-      badge.textContent = "Setup needed";
-      action = "open-agent";
-      actionLabel = "Open ChatGPT Connection";
-    } else if (state.phase !== "running") {
-      title.textContent = "Remote host is offline";
-      detail.textContent = "Start the host to receive workspace tasks.";
-      badge.textContent = "Offline";
-      action =
-        state.phase === "starting" || state.phase === "stopping"
-          ? "none"
-          : "start-runtime";
-      actionLabel =
-        state.phase === "starting" || state.phase === "stopping"
-          ? "Connecting…"
-          : "Start remote host";
-    } else if (state.secureTunnel.phase !== "ready") {
-      title.textContent = "Connecting remote host";
-      detail.textContent = "Sovereign will keep reconnecting automatically.";
-      badge.textContent = "Connecting";
-      action = "open-agent";
-      actionLabel = "Open ChatGPT Connection";
-    } else {
-      title.textContent = "Remote host ready";
-      detail.textContent =
-        state.sessionCount > 0
-          ? "This computer can receive workspace tasks now and after Windows sign-in."
-          : "The host is ready. Connect Sovereign from ChatGPT to send tasks.";
-      badge.textContent = "Ready";
-      tone = "success";
-      action = "open-agent";
-      actionLabel = "Open ChatGPT Connection";
-    }
-  }
-  setSimpleOverviewTone(badge, tone);
-  primary.textContent = actionLabel;
-  primary.dataset.simpleOverviewAction = action;
-  primary.disabled = action === "none";
-}
-
 function renderHomeState(state: DesktopRuntimeState): void {
-  const title = requiredElement<HTMLElement>("#home-host-title");
-  const detail = requiredElement<HTMLElement>("#home-host-detail");
-  const badge = requiredElement<HTMLElement>("#home-host-badge");
-  const connection = requiredElement<HTMLElement>("#home-connection");
-  const session = requiredElement<HTMLElement>("#home-session");
+  const context = state.activeDesktopWorkspace;
+  const root = context?.root ?? state.workspaceRoot;
+  const profile = context?.permissionProfile ?? state.permissionProfile;
   const permission = requiredElement<HTMLElement>("#home-permission");
-  const permissionDetail = requiredElement<HTMLElement>(
-    "#home-permission-detail",
-  );
+  permission.textContent = permissionProfileLabels[profile];
+  permission.dataset.tone = profile === "bypass" ? "error" : profile === "observe" ? "neutral" : "success";
   const workspace = requiredElement<HTMLElement>("#home-workspace-name");
-
-  let badgeTone: SimpleOverviewTone = "pending";
-  if (state.workspaceRoot === null) {
-    title.textContent = "Choose a workspace";
-    detail.textContent =
-      "Authorize the folder this computer should work in before connecting ChatGPT.";
-    badge.textContent = "Setup needed";
-  } else if (state.phase === "error") {
-    title.textContent = "This computer needs attention";
-    detail.textContent =
-      "Resolve the local runtime problem before ChatGPT can send new tasks.";
-    badge.textContent = "Problem";
-    badgeTone = "error";
-  } else if (state.phase !== "running") {
-    title.textContent = "Remote host is offline";
-    detail.textContent = "Start the host to receive tasks from ChatGPT.";
-    badge.textContent = "Offline";
-  } else if (state.sessionCount > 0) {
-    title.textContent = "This computer is ready for ChatGPT tasks";
-    detail.textContent =
-      "ChatGPT is connected and can work within the selected permission level.";
-    badge.textContent = "Ready";
-    badgeTone = "success";
-  } else if (state.secureTunnel.phase === "ready") {
-    title.textContent = "This computer is ready to connect";
-    detail.textContent =
-      "The secure connection is ready. Connect Sovereign from ChatGPT to send tasks.";
-    badge.textContent = "Ready to connect";
-    badgeTone = "success";
-  } else {
-    title.textContent = "Host is running";
-    detail.textContent =
-      "Finish the ChatGPT connection to receive remote tasks.";
-    badge.textContent = "Host online";
-    badgeTone = "pending";
-  }
-  badge.dataset.tone = badgeTone;
-
-  const tunnelDisplay = tunnelDisplayState(state);
-  if (state.sessionCount > 0) {
-    connection.textContent = "Connected";
-    connection.dataset.tone = "success";
-    session.textContent = `${state.sessionCount} active session${state.sessionCount === 1 ? "" : "s"}`;
-  } else if (state.secureTunnel.phase === "ready") {
-    connection.textContent = "Ready to connect";
-    connection.dataset.tone = "success";
-    session.textContent = "Open ChatGPT Connection";
-  } else {
-    connection.textContent = tunnelDisplay.label;
-    connection.dataset.tone = tunnelDisplay.tone;
-    session.textContent = "Connection setup or recovery required";
-  }
-
-  permission.textContent = permissionProfileLabels[state.permissionProfile];
-  permission.dataset.tone =
-    state.permissionProfile === "bypass"
-      ? "error"
-      : state.permissionProfile === "observe"
-        ? "pending"
-        : "success";
-  permissionDetail.textContent =
-    state.permissionProfile === "observe"
-      ? "Read-only access"
-      : state.permissionProfile === "workspace"
-        ? "Can work inside this folder"
-        : state.permissionProfile === "consequential"
-          ? "High-risk actions ask every time"
-          : "Per-action confirmation is off";
-
-  const workspaceName =
-    state.workspaceRoot
-      ?.split(/[\\\\/]/u)
-      .filter(Boolean)
-      .at(-1) ?? "Not selected";
-  workspace.toggleAttribute("data-no-i18n", state.workspaceRoot !== null);
-  workspace.textContent = workspaceName;
-  workspace.title = state.workspaceRoot ?? "";
+  workspace.toggleAttribute("data-no-i18n", root !== null);
+  workspace.textContent = root?.split(/[\\/]/u).filter(Boolean).at(-1) ?? "Not selected";
+  workspace.title = root ?? "";
 }
 
 function renderHostAvailability(
@@ -1334,7 +982,6 @@ function renderRemoteHostState(): void {
   const guardianState = requiredElement<HTMLElement>("#host-guardian-state");
   const guardianDetail = requiredElement<HTMLElement>("#host-guardian-detail");
 
-  renderSimpleOverviewState(state, startup);
   if (startup !== null) {
     renderHostAvailability(startup.availability);
   }
@@ -1412,17 +1059,8 @@ function renderRemoteHostState(): void {
       : `${readiness.issues.length} setup item${readiness.issues.length === 1 ? "" : "s"}`;
   status.className = `settings-section-meta remote-host-status${ready ? " is-ready" : " is-pending"}`;
   detail.textContent = ready
-    ? "Gateway, Tunnel, connector supervision and Host Guardian recovery start automatically. The selected permission returns for this exact workspace."
+    ? "The shared host and workspace permission are restored after sign-in. Each AI connection follows its saved start setting."
     : readiness.issues.join(" · ");
-
-  requiredElement<HTMLElement>("#restart-authority-value").textContent =
-    permissionProfileDisplay(state.permissionProfile);
-  requiredElement<HTMLElement>("#restart-authority-detail").textContent =
-    state.permissionProfile === "bypass"
-      ? `Protected by your Windows account for this exact workspace. Turn it off to return to ${permissionProfileDisplay(state.rememberedPermissionProfile)}.`
-      : state.unattendedWorkspaceAccess
-        ? "This permission selection is bound to the exact authorized folder and restored after sign-in."
-        : "This permission selection is remembered for the authorized workspace.";
 
   enable.disabled = !startup.supported || ready;
   if (ready) {
@@ -1432,7 +1070,7 @@ function renderRemoteHostState(): void {
     enable.textContent = "Enable unattended host";
     enable.dataset.remoteHostAction = "enable";
   } else {
-    enable.textContent = "Review ChatGPT Connection";
+    enable.textContent = "Review AI Connections";
     enable.dataset.remoteHostAction = "review";
   }
 }
@@ -1442,7 +1080,7 @@ function renderState(state: DesktopRuntimeState): void {
   renderHomeState(state);
   const label = phaseLabels[state.phase];
   const globalStatus = requiredElement<HTMLElement>("#global-status");
-  globalStatus.className = `statusbar-item statusbar-action statusbar-host status-${state.phase}`;
+  globalStatus.className = `v2-host-status status-${state.phase}`;
   requiredElement<HTMLSpanElement>("#global-status-label").textContent = label;
   requiredElement<HTMLElement>("#metric-runtime-state").textContent = label;
   const version = requiredElement<HTMLElement>("#metric-runtime-version");
@@ -1493,22 +1131,6 @@ function renderState(state: DesktopRuntimeState): void {
     state.credentialGeneration === 0
       ? "Not issued"
       : `Generation ${state.credentialGeneration} · ${state.phase === "running" ? "active" : "inactive"}`;
-  const workspacePath = requiredElement<HTMLElement>("#workspace-page-path");
-  workspacePath.toggleAttribute("data-no-i18n", state.workspaceRoot !== null);
-  workspacePath.textContent = state.workspaceRoot ?? "No workspace selected";
-  requiredElement<HTMLElement>("#status-sessions").textContent =
-    `${state.sessionCount} session${state.sessionCount === 1 ? "" : "s"}`;
-  const desktopWorkspaceRoot = state.activeDesktopWorkspace?.root ?? state.workspaceRoot;
-  const workspaceName =
-    desktopWorkspaceRoot?.split(/[\\/]/u).filter(Boolean).at(-1) ?? "None";
-  const statusWorkspace = requiredElement<HTMLElement>("#status-workspace");
-  statusWorkspace.toggleAttribute("data-no-i18n", desktopWorkspaceRoot !== null);
-  statusWorkspace.textContent = workspaceName;
-  requiredElement<HTMLButtonElement>("#status-workspace-action").title =
-    desktopWorkspaceRoot === null
-      ? "Choose a workspace"
-      : `Workspace: ${desktopWorkspaceRoot}`;
-
   const connectionBadge = requiredElement<HTMLElement>("#connection-badge");
   connectionBadge.textContent =
     state.phase === "running"
@@ -1537,6 +1159,7 @@ function renderState(state: DesktopRuntimeState): void {
     state.phase === "starting" ||
     state.phase === "stopping";
   startButton.hidden = state.phase === "running";
+  stopButton.hidden = state.phase === "stopped";
   stopButton.disabled =
     state.phase !== "running" &&
     state.phase !== "starting" &&
@@ -1548,8 +1171,9 @@ function renderState(state: DesktopRuntimeState): void {
   commandState.textContent = `Runtime ${label.toLowerCase()}`;
   commandState.className = `state-text${state.phase === "running" ? " is-healthy" : state.phase === "error" ? " is-error" : ""}`;
 
+  for (const label of document.querySelectorAll<HTMLElement>("[data-action-current-profile]")) label.textContent = permissionProfileLabels[state.permissionProfile];
   renderCapabilities(state.capabilities);
-  renderWebAgentState(state);
+  connectionsController.render(state);
   renderRemoteHostState();
   renderOverviewRuns(latestOverviewRuns);
   if (state.errorMessage !== null) {
@@ -1627,554 +1251,44 @@ function renderCapabilities(capabilities: readonly string[]): void {
   }
 }
 
-const permissionProfileLabels: Readonly<
-  Record<DesktopPermissionProfile, string>
-> = {
-  observe: "Read only",
-  workspace: "Work in this folder",
-  consequential: "Ask for high-risk actions",
-  bypass: "Bypass confirmations",
-};
-
-const permissionProfileCodes: Readonly<
-  Record<DesktopPermissionProfile, string>
-> = {
-  observe: "L1",
-  workspace: "L2",
-  consequential: "L3",
-  bypass: "L4",
-};
-
-function permissionProfileDisplay(profile: DesktopPermissionProfile): string {
-  return `${permissionProfileLabels[profile]} · ${permissionProfileCodes[profile]}`;
+function permissionContext(state: DesktopRuntimeState) {
+  if (permissionScopeId === null) return { root: state.workspaceRoot, permissionProfile: state.permissionProfile, rememberedPermissionProfile: state.rememberedPermissionProfile };
+  return state.activeDesktopWorkspace?.id === permissionScopeId ? state.activeDesktopWorkspace : null;
 }
-
-const permissionProfileDescriptions: Readonly<
-  Record<DesktopPermissionProfile, string>
-> = {
-  observe: "Read-only access",
-  workspace: "Can work inside this folder",
-  consequential: "High-risk actions ask every time",
-  bypass: "Per-action confirmation is off",
-};
-
-const permissionChoiceSurfaces = [
-  "settings-permission-profiles",
-  "web-permission-profiles",
-] as const;
-
+function selectPermissionScope(workspaceId: string | null): void {
+  permissionScopeId = workspaceId;
+  permissionDraft = null;
+  if (currentState !== null) renderPermissionChoiceState(currentState);
+}
 function renderPermissionChoiceState(state: DesktopRuntimeState): void {
-  const activeProfile = state.permissionProfile;
-  const bypassActive = activeProfile === "bypass";
-
-  for (const groupId of permissionChoiceSurfaces) {
-    const group = requiredElement<HTMLElement>(`#${groupId}`);
-    group.classList.toggle(
-      "shows-advanced-active",
-      activeProfile === "consequential",
-    );
-    group.classList.toggle("shows-bypass-active", bypassActive);
-    group.setAttribute("aria-label", "ChatGPT permission level");
-  }
-
-  for (const button of document.querySelectorAll<HTMLButtonElement>(
-    "[data-permission-profile]",
-  )) {
-    const selected = button.dataset.permissionProfile === activeProfile;
+  const context = permissionContext(state);
+  const profile = permissionDraft ?? context?.permissionProfile;
+  const busy = permissionSaving || context === null || context.root === null;
+  const group = requiredElement<HTMLElement>("#settings-permission-profiles");
+  group.dataset.workspaceScope = permissionScopeId ?? "default";
+  for (const button of group.querySelectorAll<HTMLButtonElement>("[data-permission-profile], [data-permission-bypass]")) {
+    const selected = button.hasAttribute("data-permission-bypass") ? profile === "bypass" : button.dataset.permissionProfile === profile;
     button.classList.toggle("is-selected", selected);
-    button.setAttribute("aria-pressed", selected ? "true" : "false");
-    delete button.dataset.permissionFallback;
-    button.removeAttribute("aria-describedby");
-    button.removeAttribute("title");
+    button.setAttribute("aria-pressed", String(selected));
+    button.disabled = busy;
   }
-
-  for (const button of document.querySelectorAll<HTMLButtonElement>(
-    "[data-permission-bypass]",
-  )) {
-    button.classList.toggle("is-selected", bypassActive);
-    button.classList.toggle("is-active", bypassActive);
-    button.setAttribute("aria-pressed", bypassActive ? "true" : "false");
-    button.title = bypassActive
-      ? "Confirmation bypass is active"
-      : "Enable confirmation bypass";
-  }
-}
-
-const secureTunnelPhaseLabels: Readonly<
-  Record<DesktopRuntimeState["secureTunnel"]["phase"], string>
-> = {
-  unavailable: "Not installed",
-  stopped: "Stopped",
-  starting: "Starting",
-  running: "Connecting",
-  ready: "Ready",
-  stopping: "Stopping",
-  error: "Error",
-};
-
-function tunnelDisplayState(state: DesktopRuntimeState): {
-  readonly label: string;
-  readonly tone: "neutral" | "pending" | "success" | "error";
-} {
-  const tunnel = state.secureTunnel;
-  if (!tunnel.clientAvailable) {
-    return {
-      label:
-        tunnel.tunnelId === null
-          ? "Connector not installed"
-          : "Connector missing",
-      tone: tunnel.tunnelId === null ? "neutral" : "pending",
-    };
-  }
-  if (tunnel.controlPlaneRouting.lifecycle === "circuit-open") {
-    return { label: "Route circuit open", tone: "error" };
-  }
-  if (tunnel.controlPlaneRouting.lifecycle === "needs-attention") {
-    return { label: "Connection needs attention", tone: "error" };
-  }
-  if (tunnel.nextReconnectAt !== null) {
-    return { label: "Route retry scheduled", tone: "pending" };
-  }
-  if (tunnel.errorMessage !== null || tunnel.phase === "error") {
-    return { label: "Connector error", tone: "error" };
-  }
-  if (!tunnel.executableTrusted) {
-    return { label: "Connector trust required", tone: "pending" };
-  }
-  if (tunnel.tunnelId === null) {
-    return { label: "Tunnel not configured", tone: "neutral" };
-  }
-  if (!tunnel.hasRuntimeApiKey && tunnel.phase === "stopped") {
-    return { label: "Runtime key missing", tone: "pending" };
-  }
-  if (tunnel.phase === "ready") {
-    return { label: "Tunnel ready", tone: "success" };
-  }
-  if (tunnel.phase === "starting") {
-    return { label: "Tunnel starting", tone: "pending" };
-  }
-  if (tunnel.phase === "running") {
-    return { label: "Tunnel connecting", tone: "pending" };
-  }
-  if (tunnel.phase === "stopping") {
-    return { label: "Tunnel stopping", tone: "pending" };
-  }
-  return { label: "Tunnel stopped", tone: "neutral" };
-}
-
-const ROUTE_STATUS_LABELS: Readonly<Record<string, string>> = {
-  ready: "Ready",
-  failed: "Failed",
-  probing: "Probing",
-  "cooling-down": "Cooling down",
-  untested: "Untested",
-  disabled: "Disabled",
-};
-
-/**
- * Every configured control-plane route in the order they are tried. Without it
- * the operator can only see which route is active by expanding the advanced
- * fold, which is the wrong place to look while a route is failing.
- */
-type ControlPlaneRoutingView =
-  DesktopRuntimeState["secureTunnel"]["controlPlaneRouting"];
-
-function renderRouteStrip(routing: ControlPlaneRoutingView): void {
-  const strip = requiredElement<HTMLUListElement>("#agent-route-strip");
-  strip.replaceChildren();
-  for (const id of routing.routeOrder) {
-    const route = routing.routes[id];
-    if (route === undefined) {
-      continue;
-    }
-    const row = document.createElement("li");
-    row.className = "agent-route-row";
-    row.dataset["routeStatus"] = route.status;
-    if (routing.activeRoute === id) {
-      row.classList.add("is-active");
-    }
-    const target = document.createElement("span");
-    target.className = "agent-route-target";
-    target.textContent = route.display;
-    const status = document.createElement("span");
-    status.className = "agent-route-status";
-    status.textContent = ROUTE_STATUS_LABELS[route.status] ?? route.status;
-    row.append(target, status);
-    strip.append(row);
-  }
-  strip.hidden = routing.routeOrder.length === 0;
-}
-
-function renderControlPlaneRouting(
-  tunnel: DesktopRuntimeState["secureTunnel"],
-  tunnelLocked: boolean,
-): void {
-  const routing = tunnel.controlPlaneRouting;
-  const backupInput = requiredElement<HTMLInputElement>(
-    "#secure-tunnel-backup-proxy",
-  );
-  backupInput.disabled = tunnelLocked || !tunnel.controlPlaneProxyConfigured;
-  backupInput.placeholder = tunnel.controlPlaneBackupProxyConfigured
-    ? "Saved securely · leave blank to reuse"
-    : "http://independent-backup:port";
-
-  const backupStorage = requiredElement<HTMLElement>(
-    "#secure-tunnel-backup-proxy-storage",
-  );
-  backupStorage.textContent =
-    tunnel.controlPlaneBackupProxyStorage === "windows-protected"
-      ? `Saved with Windows DPAPI · ${tunnel.controlPlaneBackupProxyDisplay ?? "backup proxy configured"}. Use an independent service or exit when possible.`
-      : tunnel.controlPlaneBackupProxyStorage === "memory-only"
-        ? `Available for this session only · ${tunnel.controlPlaneBackupProxyDisplay ?? "backup proxy configured"}. Re-enter it after restart.`
-        : tunnel.controlPlaneProxyConfigured
-          ? "Not configured · use an endpoint with an independent service or exit when possible."
-          : "Save the primary proxy before configuring a backup route.";
-  backupStorage.classList.toggle(
-    "is-warning",
-    tunnel.controlPlaneBackupProxyStorage === "memory-only",
-  );
-  requiredElement<HTMLButtonElement>(
-    "#secure-tunnel-save-backup-proxy",
-  ).disabled = tunnelLocked || !tunnel.controlPlaneProxyConfigured;
-  requiredElement<HTMLButtonElement>(
-    "#secure-tunnel-clear-backup-proxy",
-  ).disabled = !tunnel.controlPlaneBackupProxyConfigured || tunnelLocked;
-
-  const directFallback = requiredElement<HTMLInputElement>(
-    "#secure-tunnel-direct-fallback",
-  );
-  directFallback.checked = tunnel.controlPlaneDirectFallbackEnabled;
-  directFallback.disabled = tunnelLocked || !tunnel.controlPlaneProxyConfigured;
-  requiredElement<HTMLElement>(
-    "#secure-tunnel-direct-fallback-label",
-  ).textContent = tunnel.controlPlaneDirectFallbackEnabled ? "On" : "Off";
-
-  renderRouteStrip(routing);
-
-  const routeState = requiredElement<HTMLElement>("#secure-tunnel-route-state");
-  const activeRoute = routing.activeRoute;
-  routeState.className = "agent-route-state";
-  if (routing.lifecycle === "circuit-open") {
-    routeState.textContent = "Circuit open";
-    routeState.classList.add("is-danger");
-  } else if (routing.lifecycle === "needs-attention") {
-    routeState.textContent = "Needs attention";
-    routeState.classList.add("is-danger");
-  } else if (!routing.enabled) {
-    routeState.textContent = "Single route";
-  } else if (activeRoute === null) {
-    routeState.textContent = "Waiting";
-    routeState.classList.add("is-pending");
-  } else {
-    routeState.textContent = routing.activeRouteDisplay ?? activeRoute;
-    const activeStatus = routing.routes[activeRoute].status;
-    if (activeStatus === "ready") {
-      routeState.classList.add("is-ready");
-    } else if (activeStatus === "failed") {
-      routeState.classList.add("is-danger");
-    } else {
-      routeState.classList.add("is-pending");
-    }
-  }
-
-  const routeList = requiredElement<HTMLDivElement>(
-    "#secure-tunnel-route-list",
-  );
-  routeList.replaceChildren();
-  const routeLabels = {
-    primary: "Primary proxy",
-    backup: "Backup proxy",
-    direct: "Direct fallback",
-  } as const;
-  const statusLabels = {
-    disabled: "Disabled",
-    untested: "Untested",
-    probing: "Connecting",
-    ready: "Ready",
-    "cooling-down": "Cooling down",
-    failed: "Failed",
-  } as const;
-  for (const route of ["primary", "backup", "direct"] as const) {
-    const routeView = routing.routes[route];
-    const row = document.createElement("div");
-    row.className = `agent-route-row route-status-${routeView.status}`;
-    const identity = document.createElement("div");
-    const label = document.createElement("strong");
-    label.textContent = routeLabels[route];
-    const display = document.createElement("span");
-    display.textContent = routeView.display;
-    identity.append(label, display);
-    const status = document.createElement("b");
-    status.textContent = routeView.configured
-      ? statusLabels[routeView.status]
-      : "Not configured";
-    row.classList.toggle("is-active", route === activeRoute);
-    row.append(identity, status);
-    routeList.append(row);
-  }
-
-  const routeDetail = requiredElement<HTMLElement>(
-    "#secure-tunnel-route-detail",
-  );
-  if (routing.circuitReason !== null) {
-    routeDetail.textContent = routing.circuitReason;
-  } else if (tunnel.failureDiagnostic !== null) {
-    routeDetail.textContent = `${tunnel.failureDiagnostic.summary} ${tunnel.failureDiagnostic.detail}`;
-  } else if (tunnel.nextReconnectAt !== null) {
-    routeDetail.textContent = `Recovery attempt ${tunnel.reconnectAttempt} is scheduled for ${formatTimestamp(tunnel.nextReconnectAt)}.`;
-  } else if (!routing.enabled) {
-    routeDetail.textContent = tunnel.controlPlaneProxyConfigured
-      ? "Single proxy route active. Configure a backup proxy to enable classified failover."
-      : "Direct control-plane route active. Configure a primary proxy when the network requires one.";
-  } else {
-    routeDetail.textContent = `${routing.activeRouteDisplay ?? "No route active"} · ${routing.switchCount} switch${routing.switchCount === 1 ? "" : "es"}${routing.lastSwitchAt === null ? "" : ` · last ${formatTimestamp(routing.lastSwitchAt)}`}.`;
-  }
-}
-
-function updateTunnelStartAvailability(): void {
-  const state = currentState;
-  if (state === null) {
-    return;
-  }
-  const tunnel = state.secureTunnel;
-  const tunnelId =
-    requiredElement<HTMLInputElement>("#secure-tunnel-id").value.trim();
-  const keyDraft = requiredElement<HTMLInputElement>(
-    "#secure-tunnel-api-key",
-  ).value.trim();
-  const hasValidTunnelId = /^tunnel_[a-f0-9]{32}$/u.test(tunnelId);
-  const hasRuntimeKey = tunnel.hasRuntimeApiKey || keyDraft.length > 0;
-  const tunnelActive = ["starting", "running", "ready", "stopping"].includes(
-    tunnel.phase,
-  );
-  const tunnelManaged = tunnelActive || tunnel.desiredRunning;
-  const start = requiredElement<HTMLButtonElement>("#secure-tunnel-start");
-  start.disabled =
-    state.phase !== "running" ||
-    !tunnel.clientAvailable ||
-    tunnelManaged ||
-    !hasValidTunnelId ||
-    !hasRuntimeKey;
-
-  const instructions = requiredElement<HTMLElement>(
-    "#secure-tunnel-instructions",
-  );
-  if (state.phase !== "running") {
-    instructions.textContent = "Start the local Gateway first.";
-  } else if (!tunnel.clientAvailable) {
-    instructions.textContent =
-      "Choose the installed tunnel-client.exe, or make it available on PATH.";
-  } else if (!hasValidTunnelId) {
-    instructions.textContent =
-      "Paste the actual Tunnel ID from OpenAI Platform.";
-  } else if (!hasRuntimeKey) {
-    instructions.textContent =
-      "Paste the Tunnel runtime key. Sovereign will protect it with your Windows account for reuse.";
-  } else if (!tunnel.executableTrusted) {
-    instructions.textContent =
-      "Start will show the resolved client path and SHA-256 for local trust confirmation.";
-  } else if (tunnel.controlPlaneRouting.lifecycle === "circuit-open") {
-    instructions.textContent =
-      "All configured control-plane routes failed. Review the route evidence, then Start to reset the route circuit.";
-  } else if (tunnel.controlPlaneRouting.lifecycle === "needs-attention") {
-    instructions.textContent =
-      tunnel.failureDiagnostic?.summary ??
-      "The connection needs local attention before it can restart.";
-  } else if (tunnel.nextReconnectAt !== null) {
-    instructions.textContent = `Connector restart attempt ${tunnel.reconnectAttempt} is scheduled for ${formatTimestamp(tunnel.nextReconnectAt)}. Stop the tunnel to cancel supervision.`;
-  } else if (tunnel.phase === "ready") {
-    instructions.textContent =
-      state.sessionCount > 0
-        ? "ChatGPT is connected."
-        : "Tunnel is ready. Connect the Sovereign app from ChatGPT.";
-  } else if (tunnel.phase === "running" || tunnel.phase === "starting") {
-    instructions.textContent = "Tunnel connection is being established.";
-  } else {
-    instructions.textContent = "Ready to start the Secure MCP Tunnel.";
-  }
-}
-
-function renderWebAgentState(state: DesktopRuntimeState): void {
-  const profile = state.permissionProfile;
-  const profileLabel = permissionProfileDisplay(profile);
-  const profileBadge = requiredElement<HTMLElement>("#web-profile-badge");
-  profileBadge.textContent = profileLabel;
-  requiredElement<HTMLElement>("#web-permission-description").textContent =
-    permissionProfileDescriptions[profile];
-  requiredElement<HTMLElement>("#web-agent-authority").textContent =
-    `${profileLabel} · ${permissionProfileDescriptions[profile]}`;
-  requiredElement<HTMLElement>("#web-agent-endpoint").textContent =
-    state.endpoint ?? "Start the runtime to create an endpoint.";
-  const gatewayBadge = requiredElement<HTMLElement>("#web-agent-gateway");
-  gatewayBadge.textContent =
-    state.phase === "running"
-      ? "Host online"
-      : `Host ${phaseLabels[state.phase].toLowerCase()}`;
-  gatewayBadge.className = `agent-status-value ${state.phase === "running" ? "is-healthy" : ""}`;
-
-  const tunnel = state.secureTunnel;
-  requiredElement<HTMLElement>("#secure-tunnel-path").textContent =
-    tunnel.executablePath ?? "Not detected";
-  const tunnelDisplay = tunnelDisplayState(state);
-  const statusConnectionLabel =
-    state.sessionCount > 0
-      ? "Connected"
-      : tunnel.phase === "ready"
-        ? "Ready to connect"
-        : tunnelDisplay.label;
-  const statusTunnel = requiredElement<HTMLElement>("#status-tunnel");
-  statusTunnel.textContent = statusConnectionLabel;
-  statusTunnel.className = `statusbar-value status-${state.sessionCount > 0 ? "success" : tunnelDisplay.tone}`;
-  requiredElement<HTMLButtonElement>("#status-connector-action").title =
-    `${statusConnectionLabel} · Open ChatGPT Connection`;
-  const statusAuthority = requiredElement<HTMLElement>("#status-authority");
-  statusAuthority.textContent = profileLabel;
-  statusAuthority.className = `statusbar-value${profile === "bypass" ? " status-error" : ""}`;
-  requiredElement<HTMLButtonElement>("#status-permission-action").title =
-    `${profileLabel} · Change ChatGPT permission`;
-  requiredElement<HTMLElement>("#settings-authority-label").textContent =
-    profileLabel;
-  const bypassActive = profile === "bypass";
-  const fallbackLabel = permissionProfileDisplay(
-    state.rememberedPermissionProfile,
-  );
-  requiredElement<HTMLElement>("#web-bypass-state").textContent = bypassActive
-    ? `Without confirmation is active. Switching levels returns to ${fallbackLabel}.`
-    : "Confirmation behavior follows the selected permission level.";
-  for (const current of document.querySelectorAll<HTMLElement>(
-    "[data-action-current-profile]",
-  )) {
-    current.textContent = profileLabel;
-  }
-  const settingsBypassState = requiredElement<HTMLElement>(
-    "#settings-bypass-state",
-  );
-  settingsBypassState.textContent = bypassActive ? "On" : "Off";
-  for (const button of document.querySelectorAll<HTMLButtonElement>(
-    "[data-bypass-toggle]",
-  )) {
-    button.classList.toggle("is-active", bypassActive);
-    button.classList.toggle("is-selected", bypassActive);
-    button.setAttribute("aria-pressed", bypassActive ? "true" : "false");
-    button.setAttribute(
-      "aria-label",
-      bypassActive
-        ? `Without confirmation is active. Select to return to ${fallbackLabel}.`
-        : "Enable without confirmation",
-    );
-  }
-  renderPermissionChoiceState(state);
-
-  const tunnelIdInput = requiredElement<HTMLInputElement>("#secure-tunnel-id");
-  if (secureTunnelIdDraft === null) {
-    secureTunnelIdDraft = tunnel.tunnelId ?? "";
-  } else if (
-    !secureTunnelIdDirty &&
-    tunnel.tunnelId !== null &&
-    tunnel.tunnelId !== secureTunnelIdDraft
-  ) {
-    secureTunnelIdDraft = tunnel.tunnelId;
-  }
-  if (document.activeElement !== tunnelIdInput) {
-    tunnelIdInput.value = secureTunnelIdDraft;
-  }
-  const tunnelStatus = requiredElement<HTMLElement>("#secure-tunnel-status");
-  tunnelStatus.textContent =
-    tunnel.errorMessage ??
-    tunnel.failureDiagnostic?.summary ??
-    tunnelDisplay.label;
-  tunnelStatus.title =
-    tunnel.failureDiagnostic === null
-      ? ""
-      : `${tunnel.failureDiagnostic.failureClass} · ${tunnel.failureDiagnostic.source} · ${tunnel.failureDiagnostic.detail}`;
-  tunnelStatus.className = `agent-connection-state state-${tunnelDisplay.tone}`;
-  requiredElement<HTMLButtonElement>("#secure-tunnel-retry").hidden =
-    tunnel.clientAvailable;
-  const tunnelActive = ["starting", "running", "ready", "stopping"].includes(
-    tunnel.phase,
-  );
-  const tunnelLocked = tunnelActive || tunnel.desiredRunning;
-  requiredElement<HTMLButtonElement>("#secure-tunnel-stop").disabled =
-    !tunnelActive && !tunnel.desiredRunning;
-  requiredElement<HTMLButtonElement>("#secure-tunnel-choose").disabled =
-    tunnelLocked;
-  requiredElement<HTMLButtonElement>("#secure-tunnel-refresh").disabled =
-    tunnel.phase === "stopping";
-  const runtimeKeyInput = requiredElement<HTMLInputElement>(
-    "#secure-tunnel-api-key",
-  );
-  runtimeKeyInput.placeholder = tunnel.hasRuntimeApiKey
-    ? "Saved securely · leave blank to reuse"
-    : "Paste runtime key";
-  const runtimeKeyStorage = requiredElement<HTMLElement>(
-    "#secure-tunnel-key-storage",
-  );
-  runtimeKeyStorage.textContent =
-    tunnel.runtimeApiKeyStorage === "windows-protected"
-      ? "Saved with Windows DPAPI · leave this field blank to reuse it after restart."
-      : tunnel.runtimeApiKeyStorage === "memory-only"
-        ? "Available for this session only · Windows protection failed, so re-enter it after restart."
-        : "Not saved · paste once and Sovereign will protect it with your Windows account.";
-  runtimeKeyStorage.classList.toggle(
-    "is-warning",
-    tunnel.runtimeApiKeyStorage === "memory-only",
-  );
-  requiredElement<HTMLButtonElement>("#secure-tunnel-clear-key").disabled =
-    !tunnel.hasRuntimeApiKey || tunnelLocked;
-
-  const proxyInput = requiredElement<HTMLInputElement>("#secure-tunnel-proxy");
-  proxyInput.disabled = tunnelLocked;
-  proxyInput.placeholder = tunnel.controlPlaneProxyConfigured
-    ? "Saved securely · leave blank to reuse"
-    : "http://proxy-host:port";
-  const proxyStorage = requiredElement<HTMLElement>(
-    "#secure-tunnel-proxy-storage",
-  );
-  proxyStorage.textContent =
-    tunnel.controlPlaneProxyStorage === "windows-protected"
-      ? `Saved with Windows DPAPI · ${tunnel.controlPlaneProxyDisplay ?? "proxy configured"}. Only OpenAI control-plane requests use it; local MCP remains direct.`
-      : tunnel.controlPlaneProxyStorage === "memory-only"
-        ? `Available for this session only · ${tunnel.controlPlaneProxyDisplay ?? "proxy configured"}. Re-enter it after restart; local MCP remains direct.`
-        : "Not configured · only OpenAI control-plane requests use this proxy; the local MCP endpoint remains direct on 127.0.0.1.";
-  proxyStorage.classList.toggle(
-    "is-warning",
-    tunnel.controlPlaneProxyStorage === "memory-only",
-  );
-  requiredElement<HTMLButtonElement>("#secure-tunnel-save-proxy").disabled =
-    tunnelLocked;
-  requiredElement<HTMLButtonElement>("#secure-tunnel-clear-proxy").disabled =
-    !tunnel.controlPlaneProxyConfigured || tunnelLocked;
-  renderControlPlaneRouting(tunnel, tunnelLocked);
-
-  const bridgeInput = requiredElement<HTMLInputElement>("#web-bridge-url");
-  if (document.activeElement !== bridgeInput) {
-    bridgeInput.value = state.webBridgeUrl ?? "";
-  }
-  requiredElement<HTMLElement>("#web-bridge-status").textContent =
-    state.webBridgeUrl === null
-      ? "No remote bridge configured. Local MCP remains available to local clients."
-      : `Saved bridge · ${state.webBridgeUrl}`;
-  requiredElement<HTMLElement>("#web-connection-target").textContent =
-    tunnel.phase === "ready"
-      ? "Secure MCP Tunnel is ready; use its tunnel ID in ChatGPT. This bundle remains for local/fallback connections."
-      : state.webBridgeUrl === null
-        ? "Current bundle targets the local Gateway only. Configure the Secure MCP Tunnel above or a fallback HTTPS bridge."
-        : `Fallback ChatGPT bundle target · ${state.webBridgeUrl}`;
-
-  const tunnelBadge = requiredElement<HTMLElement>("#web-session-badge");
-  tunnelBadge.textContent = tunnelDisplay.label;
-  tunnelBadge.className = `agent-status-value state-${tunnelDisplay.tone}`;
-  const clientBadge = requiredElement<HTMLElement>("#web-agent-client");
-  clientBadge.textContent =
-    state.sessionCount > 0
-      ? `ChatGPT connected · ${state.sessionCount}`
-      : tunnel.phase === "ready"
-        ? "ChatGPT not connected"
-        : "Connection unavailable";
-  clientBadge.className = `agent-status-value ${state.sessionCount > 0 ? "is-healthy" : tunnel.phase === "ready" ? "is-pending" : ""}`;
-  requiredElement<HTMLButtonElement>("#web-copy-connection").disabled =
-    state.phase !== "running";
-  updateTunnelStartAvailability();
+  const path = requiredElement<HTMLElement>("#workspace-page-path");
+  path.textContent = context === null ? "Workspace is no longer active" : context.root ?? "No workspace selected";
+  path.toggleAttribute("data-no-i18n", context?.root != null);
+  requiredElement<HTMLElement>("#settings-authority-label").textContent = profile ? permissionProfileLabels[profile] : "Unavailable";
+  requiredElement<HTMLElement>("#settings-bypass-state").textContent = profile === "bypass" ? "On" : "Off";
+  const guidance = requiredElement<HTMLElement>("#settings-permission-guidance");
+  guidance.textContent = context === null ? "Reopen permissions from the active project."
+    : profile === "workspace" ? "Read and edit files inside the authorized workspace. Other actions remain subject to their own permissions and approvals."
+    : profile === "consequential" ? "Work in this folder; ask before high-risk actions."
+    : profile === "bypass" ? "Allow actions without Sovereign approval prompts." : "Read files, search and inspect project status.";
+  guidance.dataset.tone = profile === "bypass" ? "error" : "neutral";
+  requiredElement<HTMLButtonElement>("#v2-save-workspace").title = permissionDraft !== null ? "Unsaved permission change" : "";
+  requiredElement<HTMLButtonElement>("#v2-save-workspace").disabled = busy || permissionDraft === null;
+  requiredElement<HTMLButtonElement>("#workspace-page-choose").textContent = permissionScopeId === null ? "Choose workspace" : "Manage project directory";
+  requiredElement<HTMLElement>("#restart-authority-value").textContent = context?.root == null ? "Unavailable" : permissionProfileDisplay(context.permissionProfile);
+  requiredElement<HTMLElement>("#restart-authority-detail").textContent = context === null ? "Reopen permissions from the active project."
+    : context.root === null ? "No workspace selected" : "This saved permission applies only to the authorized directory shown above. Startup settings are managed separately.";
 }
 
 function renderManifest(manifest: DesktopManifestView | null): void {
@@ -2233,44 +1347,6 @@ function renderManifest(manifest: DesktopManifestView | null): void {
     }
     container.append(group);
   }
-}
-
-function overviewRunDuration(run: DesktopRunRecord): string {
-  if (run.durationMs !== null) {
-    return formatDurationMs(run.durationMs);
-  }
-  if (run.startedAt === null) {
-    return "Queued";
-  }
-  const startedAt = Date.parse(run.startedAt);
-  return Number.isFinite(startedAt)
-    ? formatDurationMs(Math.max(0, Date.now() - startedAt))
-    : "Running";
-}
-
-const PROGRESS_OUTPUT_PATTERN =
-  /(?:\b(?:progress|stage|step|build|building|compile|compiling|typecheck|check|checking|test|testing|install|installing|download|downloading|upload|uploading|process|processing|complete|completed|ready)\b|\b\d{1,3}%\b|\b\d+\s*\/\s*\d+\b)/iu;
-
-function sanitizeProgressLine(value: string): string {
-  return value
-    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, "")
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/gu, "")
-    .replace(/\s+/gu, " ")
-    .trim();
-}
-
-function latestProgressLine(run: DesktopRunRecord): string | null {
-  const output = run.stdout.trim().length > 0 ? run.stdout : run.stderr;
-  const lines = output
-    .split(/\r?\n/gu)
-    .map(sanitizeProgressLine)
-    .filter(Boolean)
-    .reverse();
-  const latest = lines.find((line) => PROGRESS_OUTPUT_PATTERN.test(line));
-  if (latest === undefined) {
-    return null;
-  }
-  return latest.length > 96 ? `${latest.slice(0, 93)}…` : latest;
 }
 
 function overviewActivityDuration(startedAt: string): string {
@@ -2380,93 +1456,12 @@ function renderOverviewActivity(): void {
   }
 }
 
-function renderOverviewActiveRun(
-  run: DesktopRunRecord | null,
-  activeCount: number,
-): void {
-  if (run === null) {
-    return;
-  }
-  const activeAgentTasks =
-    latestTaskWorkspace?.projects
-      .flatMap((project) => project.tasks)
-      .filter(taskHasLiveAgent) ?? [];
-  if (activeAgentTasks.length > 0) {
-    renderOverviewRuns(latestOverviewRuns);
-    return;
-  }
-  const activeAgentTaskCount = activeAgentTasks.length;
-  const totalActiveCount =
-    activeCount +
-    (currentState?.activeToolActivities.length ?? 0) +
-    activeAgentTaskCount;
-  const statusTask = requiredElement<HTMLElement>("#status-task");
-  const statusTaskAction = requiredElement<HTMLButtonElement>(
-    "#status-task-action",
-  );
-  delete statusTaskAction.dataset.taskId;
-  statusTask.textContent =
-    totalActiveCount === 1 ? "1 running" : `${totalActiveCount} running`;
-  statusTask.className = "statusbar-value status-running";
-  statusTaskAction.title = `${run.label} · ${overviewRunDuration(run)} · Open Tasks`;
+function renderOverviewActiveRun(_run: DesktopRunRecord | null, _activeCount: number): void {
   syncActiveWorkNavigator();
 }
-
 function renderOverviewRuns(runs: readonly DesktopRunSummary[]): void {
   latestOverviewRuns = runs;
   pythonController.syncRuns(runs);
-  const activeRuns = runs.filter(
-    (run) => run.state === "queued" || run.state === "running",
-  );
-  const statusTask = requiredElement<HTMLElement>("#status-task");
-  const statusTaskAction = requiredElement<HTMLButtonElement>(
-    "#status-task-action",
-  );
-  delete statusTaskAction.dataset.taskId;
-  const liveActivities = currentState?.activeToolActivities ?? [];
-  const projectTasks =
-    latestTaskWorkspace?.projects.flatMap((project) => project.tasks) ?? [];
-  const explicitTasks = projectTasks.filter(
-    (task) => task.source !== "inferred",
-  );
-  const activeAgentTasks = explicitTasks.filter(taskHasLiveAgent);
-  const attentionAgentTasks = explicitTasks.filter(taskNeedsOperatorAction);
-  const primaryActiveRun = activeRuns[0];
-  const primaryLiveActivity = liveActivities[0];
-  const primaryAgentTask = activeAgentTasks[0] ?? attentionAgentTasks[0];
-  const fallbackActiveCount = activeRuns.length + liveActivities.length;
-  if (
-    primaryActiveRun === undefined &&
-    primaryLiveActivity === undefined &&
-    primaryAgentTask === undefined
-  ) {
-    statusTask.textContent = "Idle";
-    statusTask.className = "statusbar-value";
-    statusTaskAction.title = "No active task · Open Tasks";
-  } else if (primaryAgentTask !== undefined) {
-    const needsAttention = taskNeedsOperatorAction(primaryAgentTask);
-    statusTask.textContent = needsAttention
-      ? "Needs attention"
-      : activeAgentTasks.length === 1
-        ? "1 Agent task"
-        : `${activeAgentTasks.length} Agent tasks`;
-    statusTask.className = needsAttention
-      ? "statusbar-value status-warning"
-      : "statusbar-value status-running";
-    statusTaskAction.title = `${primaryAgentTask.title} · Open task`;
-    statusTaskAction.dataset.taskId = primaryAgentTask.id;
-  } else if (primaryActiveRun !== undefined) {
-    statusTask.textContent = `${fallbackActiveCount} running`;
-    statusTask.className = "statusbar-value status-running";
-    statusTaskAction.title = `${primaryActiveRun.label} · Open Tasks`;
-  } else if (primaryLiveActivity !== undefined) {
-    const label =
-      ACTIVITY_DISPLAY_LABELS[primaryLiveActivity.toolName] ??
-      primaryLiveActivity.title;
-    statusTask.textContent = `${fallbackActiveCount} running`;
-    statusTask.className = "statusbar-value status-running";
-    statusTaskAction.title = `${label} · Open Tasks`;
-  }
   syncActiveWorkNavigator();
   renderOverviewActivity();
   renderOverviewAttention();
@@ -2514,7 +1509,7 @@ function renderOverviewAttention(): void {
           ? tunnel.errorMessage
           : `${tunnel.errorMessage} ${diagnostic.summary}`,
       severity: "error",
-      action: { label: "Open ChatGPT Connection", view: "agent" },
+      action: { label: "Open AI Connections", view: "agent" },
     });
   } else if (tunnel?.tunnelId !== null && tunnel?.tunnelId !== undefined) {
     if (!tunnel.clientAvailable) {
@@ -2538,14 +1533,14 @@ function renderOverviewAttention(): void {
         detail:
           "Runtime key is required before the configured tunnel can start.",
         severity: "warning",
-        action: { label: "Open ChatGPT Connection", view: "agent" },
+        action: { label: "Open AI Connections", view: "agent" },
       });
     } else if (tunnel.phase === "ready" && currentState?.sessionCount === 0) {
       issues.push({
-        title: "ChatGPT session",
-        detail: "Tunnel is ready, but no ChatGPT MCP client is connected yet.",
+        title: "MCP sessions",
+        detail: "No active MCP sessions are reported by the Gateway.",
         severity: "warning",
-        action: { label: "Open ChatGPT Connection", view: "agent" },
+        action: { label: "Open AI Connections", view: "agent" },
       });
     }
   }
@@ -2728,58 +1723,6 @@ function renderAudit(receipts: readonly DesktopAuditReceipt[]): void {
   syncExternalActivitySurfaces(receipts);
   latestAuditReceipts = receipts;
   renderOverviewActivity();
-  const body = requiredElement<HTMLTableSectionElement>("#audit-body");
-  body.replaceChildren();
-  const normalizedQuery = auditSearchQuery.trim().toLowerCase();
-  const filtered = receipts.filter((receipt) => {
-    const matchesOutcome =
-      auditOutcomeFilter === "all" || receipt.outcome === auditOutcomeFilter;
-    const haystack =
-      `${receipt.toolName} ${receipt.operation} ${receipt.relativePath ?? ""}`.toLowerCase();
-    const matchesSearch =
-      normalizedQuery.length === 0 || haystack.includes(normalizedQuery);
-    return matchesOutcome && matchesSearch;
-  });
-  requiredElement<HTMLElement>("#audit-count").textContent =
-    `${filtered.length} receipt${filtered.length === 1 ? "" : "s"}`;
-
-  if (filtered.length === 0) {
-    const row = document.createElement("tr");
-    const cell = document.createElement("td");
-    cell.colSpan = 5;
-    cell.className = "table-empty compact-table-empty";
-    cell.textContent =
-      receipts.length === 0
-        ? currentState?.phase === "running"
-          ? "No audit receipts yet."
-          : "Start the runtime to read the audit ledger."
-        : "No receipts match the current filter.";
-    row.append(cell);
-    body.append(row);
-    return;
-  }
-
-  for (const receipt of filtered) {
-    const row = document.createElement("tr");
-    const values = [
-      formatTimestamp(receipt.occurredAt),
-      receipt.toolName,
-      receipt.operation,
-      receipt.relativePath ?? "—",
-    ];
-    for (const value of values) {
-      const cell = document.createElement("td");
-      cell.textContent = value;
-      row.append(cell);
-    }
-    const outcomeCell = document.createElement("td");
-    const outcome = document.createElement("span");
-    outcome.className = `outcome outcome-${receipt.outcome}`;
-    outcome.textContent = receipt.outcome;
-    outcomeCell.append(outcome);
-    row.append(outcomeCell);
-    body.append(row);
-  }
 }
 
 function renderResourceSnapshot(snapshot: DesktopResourceSnapshot): void {
@@ -3379,7 +2322,7 @@ async function performRefreshAll(): Promise<void> {
     ]);
     renderManifest(manifest);
     renderAudit(receipts);
-    await Promise.all([runsController.refresh(), tasksController.refresh()]);
+    await Promise.all([runsController.refresh(), tasksController.refresh(), connectionsController.refresh(), approvalsAuditController.refresh()]);
     await refreshActiveWorkbench();
     consecutivePollFailures = 0;
   } catch (error) {
@@ -3420,7 +2363,7 @@ async function copyConnectionBundle(): Promise<void> {
   try {
     const result = await window.sovereign.copyConnectionBundle();
     const targetLabel =
-      result.target === "web-bridge" ? "ChatGPT Web bridge" : "local Gateway";
+      result.target === "web-bridge" ? "fallback MCP bridge" : "local Gateway";
     showToast(
       `Connection bundle copied for ${targetLabel}. Clipboard clears at ${formatTimestamp(result.clipboardClearsAt)}.`,
     );
@@ -3581,10 +2524,9 @@ async function enableRemoteHostMode(): Promise<void> {
       state = await window.sovereign.start();
     }
     state = await window.sovereign.setUnattendedWorkspaceAccess(true);
-    state = await window.sovereign.setSecureTunnelAutomation({
-      autoStart: true,
-      autoReconnect: true,
-    });
+    if (!connectionsController.geminiConfigured && state.secureTunnel.tunnelId !== null) {
+      state = await window.sovereign.setSecureTunnelAutomation({ autoStart: true, autoReconnect: true });
+    }
     renderState(state);
     const startup = currentHostStartup;
     const readiness =
@@ -3592,7 +2534,7 @@ async function enableRemoteHostMode(): Promise<void> {
     showToast(
       readiness?.connectionReady === true
         ? `Unattended host enabled for this workspace · ${permissionProfileDisplay(state.permissionProfile)} remains selected and will be restored after sign-in.`
-        : "Startup automation enabled. Complete the remaining ChatGPT connection items.",
+        : "Startup automation enabled. Review the remaining AI connection settings.",
     );
   } catch (error) {
     await refreshAll().catch(() => undefined);
@@ -3607,416 +2549,30 @@ async function enableRemoteHostMode(): Promise<void> {
   }
 }
 
-async function updateWebBridgeUrl(value: string | null): Promise<void> {
-  const save = requiredElement<HTMLButtonElement>("#web-save-bridge");
-  const clear = requiredElement<HTMLButtonElement>("#web-clear-bridge");
-  save.disabled = true;
-  clear.disabled = true;
+async function updatePermissionProfile(profile: DesktopPermissionProfile): Promise<void> {
+  if (permissionSaving || currentState === null || permissionContext(currentState) === null) return;
+  const scope = permissionScopeId;
+  permissionSaving = true;
+  renderPermissionChoiceState(currentState);
   try {
-    const state = await window.sovereign.setWebBridgeUrl(value);
+    const state = await window.sovereign.setPermissionProfile(profile, scope ?? undefined);
+    if (scope === permissionScopeId) permissionDraft = null;
     renderState(state);
-    showToast(
-      state.webBridgeUrl === null
-        ? "ChatGPT Web bridge cleared."
-        : "ChatGPT Web bridge saved.",
-    );
+    const applied = scope === null ? state.permissionProfile : state.activeDesktopWorkspace?.id === scope ? state.activeDesktopWorkspace.permissionProfile : null;
+    showToast(applied === profile ? "Workspace permission saved." : "Permission change cancelled.");
   } catch (error) {
-    if (currentState !== null) {
-      renderState(currentState);
-    }
-    showToast(
-      error instanceof Error
-        ? error.message
-        : "Could not update the web bridge URL.",
-      true,
-    );
+    showToast(error instanceof Error ? error.message : "Could not update workspace permissions.", true);
   } finally {
-    save.disabled = false;
-    clear.disabled = false;
+    permissionSaving = false;
+    if (currentState) renderPermissionChoiceState(currentState);
   }
 }
 
-async function chooseSecureTunnelExecutable(): Promise<void> {
-  try {
-    const previousPath = currentState?.secureTunnel.executablePath ?? null;
-    const state = await window.sovereign.chooseSecureTunnelExecutable();
-    renderState(state);
-    const nextPath = state.secureTunnel.executablePath;
-    showToast(
-      nextPath !== null && nextPath !== previousPath
-        ? "Connector selected. Start the tunnel to review and trust its SHA-256."
-        : "Connector selection cancelled.",
-    );
-  } catch (error) {
-    showToast(
-      error instanceof Error
-        ? error.message
-        : "Could not choose the tunnel connector.",
-      true,
-    );
-  }
-}
-
-async function startSecureTunnel(): Promise<void> {
-  const tunnelId =
-    requiredElement<HTMLInputElement>("#secure-tunnel-id").value.trim();
-  const apiKeyInput = requiredElement<HTMLInputElement>(
-    "#secure-tunnel-api-key",
-  );
-  const runtimeApiKey = apiKeyInput.value.trim();
-  const proxyInput = requiredElement<HTMLInputElement>("#secure-tunnel-proxy");
-  const controlPlaneProxyUrl = proxyInput.value.trim();
-  const backupProxyInput = requiredElement<HTMLInputElement>(
-    "#secure-tunnel-backup-proxy",
-  );
-  const controlPlaneBackupProxyUrl = backupProxyInput.value.trim();
-  const controlPlaneDirectFallbackEnabled = requiredElement<HTMLInputElement>(
-    "#secure-tunnel-direct-fallback",
-  ).checked;
-  if (!/^tunnel_[a-f0-9]{32}$/u.test(tunnelId)) {
-    showToast(
-      "Paste the actual Tunnel ID from OpenAI Platform. The gray example text is not a configured tunnel.",
-      true,
-    );
-    return;
-  }
-  if (
-    runtimeApiKey.length === 0 &&
-    currentState?.secureTunnel.hasRuntimeApiKey !== true
-  ) {
-    showToast(
-      "Paste a Tunnel runtime API key before starting. Sovereign will protect it with your Windows account for reuse.",
-      true,
-    );
-    return;
-  }
-  try {
-    let state = await window.sovereign.configureSecureTunnel({
-      tunnelId,
-      ...(runtimeApiKey.length === 0 ? {} : { runtimeApiKey }),
-      ...(controlPlaneProxyUrl.length === 0 ? {} : { controlPlaneProxyUrl }),
-      ...(controlPlaneBackupProxyUrl.length === 0
-        ? {}
-        : { controlPlaneBackupProxyUrl }),
-      controlPlaneDirectFallbackEnabled,
-    });
-    secureTunnelIdDraft = state.secureTunnel.tunnelId ?? "";
-    secureTunnelIdDirty = false;
-    renderState(state);
-    state = await window.sovereign.startSecureTunnel();
-    apiKeyInput.value = "";
-    proxyInput.value = "";
-    backupProxyInput.value = "";
-    renderState(state);
-    showToast(
-      state.secureTunnel.phase === "ready"
-        ? "Secure MCP Tunnel is ready for ChatGPT Web."
-        : (state.secureTunnel.errorMessage ??
-            "Secure MCP Tunnel started; readiness is still pending."),
-      state.secureTunnel.phase === "error" ||
-        state.secureTunnel.phase === "unavailable",
-    );
-  } catch (error) {
-    showToast(
-      error instanceof Error
-        ? error.message
-        : "Could not start Secure MCP Tunnel.",
-      true,
-    );
-  }
-}
-
-async function stopSecureTunnel(): Promise<void> {
-  try {
-    const state = await window.sovereign.stopSecureTunnel();
-    renderState(state);
-    showToast("Secure MCP Tunnel stopped.");
-  } catch (error) {
-    showToast(
-      error instanceof Error
-        ? error.message
-        : "Could not stop Secure MCP Tunnel.",
-      true,
-    );
-  }
-}
-
-async function refreshSecureTunnel(): Promise<void> {
-  try {
-    const state = await window.sovereign.refreshSecureTunnel();
-    renderState(state);
-    showToast(
-      `Secure MCP Tunnel · ${secureTunnelPhaseLabels[state.secureTunnel.phase]}.`,
-    );
-  } catch (error) {
-    showToast(
-      error instanceof Error
-        ? error.message
-        : "Could not refresh Secure MCP Tunnel.",
-      true,
-    );
-  }
-}
-
-async function clearSecureTunnelKey(): Promise<void> {
-  try {
-    const tunnelId = currentState?.secureTunnel.tunnelId ?? null;
-    const state = await window.sovereign.configureSecureTunnel({
-      tunnelId,
-      clearRuntimeApiKey: true,
-    });
-    requiredElement<HTMLInputElement>("#secure-tunnel-api-key").value = "";
-    renderState(state);
-    showToast(
-      "Tunnel runtime API key forgotten from Windows-protected storage and memory.",
-    );
-  } catch (error) {
-    showToast(
-      error instanceof Error
-        ? error.message
-        : "Could not clear the tunnel runtime key.",
-      true,
-    );
-  }
-}
-
-function configuredTunnelIdDraft(): string | null {
-  const tunnelIdDraft =
-    requiredElement<HTMLInputElement>("#secure-tunnel-id").value.trim();
-  if (tunnelIdDraft.length === 0) {
-    return currentState?.secureTunnel.tunnelId ?? null;
-  }
-  return /^tunnel_[a-f0-9]{32}$/u.test(tunnelIdDraft) ? tunnelIdDraft : null;
-}
-
-async function saveSecureTunnelProxy(): Promise<void> {
-  const input = requiredElement<HTMLInputElement>("#secure-tunnel-proxy");
-  const value = input.value.trim();
-  if (value.length === 0) {
-    showToast(
-      "Enter an HTTP or HTTPS control-plane proxy URL before saving.",
-      true,
-    );
-    return;
-  }
-  const tunnelId = configuredTunnelIdDraft();
-  if (tunnelId === null) {
-    showToast("Fix the Tunnel ID before saving the control-plane proxy.", true);
-    return;
-  }
-  try {
-    const state = await window.sovereign.configureSecureTunnel({
-      tunnelId,
-      controlPlaneProxyUrl: value,
-    });
-    input.value = "";
-    renderState(state);
-    showToast(
-      state.secureTunnel.controlPlaneProxyStorage === "windows-protected"
-        ? "Control-plane proxy saved with Windows protection."
-        : "Control-plane proxy is available for this session only.",
-      state.secureTunnel.controlPlaneProxyStorage === "memory-only",
-    );
-  } catch (error) {
-    showToast(
-      error instanceof Error
-        ? error.message
-        : "Could not save the control-plane proxy.",
-      true,
-    );
-  }
-}
-
-async function clearSecureTunnelProxy(): Promise<void> {
-  const tunnelId = currentState?.secureTunnel.tunnelId ?? null;
-  try {
-    const state = await window.sovereign.configureSecureTunnel({
-      tunnelId,
-      clearControlPlaneProxy: true,
-    });
-    requiredElement<HTMLInputElement>("#secure-tunnel-proxy").value = "";
-    renderState(state);
-    showToast(
-      "Control-plane proxy forgotten from Windows-protected storage and memory.",
-    );
-  } catch (error) {
-    showToast(
-      error instanceof Error
-        ? error.message
-        : "Could not clear the control-plane proxy.",
-      true,
-    );
-  }
-}
-
-async function saveSecureTunnelBackupProxy(): Promise<void> {
-  const input = requiredElement<HTMLInputElement>(
-    "#secure-tunnel-backup-proxy",
-  );
-  const value = input.value.trim();
-  if (value.length === 0) {
-    showToast("Enter an HTTP or HTTPS backup proxy URL before saving.", true);
-    return;
-  }
-  const tunnelId = configuredTunnelIdDraft();
-  if (tunnelId === null) {
-    showToast("Fix the Tunnel ID before saving the backup proxy.", true);
-    return;
-  }
-  const primaryDraft = requiredElement<HTMLInputElement>(
-    "#secure-tunnel-proxy",
-  ).value.trim();
-  if (
-    primaryDraft.length === 0 &&
-    currentState?.secureTunnel.controlPlaneProxyConfigured !== true
-  ) {
-    showToast(
-      "Save the primary control-plane proxy before adding a backup.",
-      true,
-    );
-    return;
-  }
-  try {
-    const state = await window.sovereign.configureSecureTunnel({
-      tunnelId,
-      ...(primaryDraft.length === 0
-        ? {}
-        : { controlPlaneProxyUrl: primaryDraft }),
-      controlPlaneBackupProxyUrl: value,
-    });
-    input.value = "";
-    if (primaryDraft.length > 0) {
-      requiredElement<HTMLInputElement>("#secure-tunnel-proxy").value = "";
-    }
-    renderState(state);
-    showToast(
-      state.secureTunnel.controlPlaneBackupProxyStorage === "windows-protected"
-        ? "Backup control-plane proxy saved with Windows protection."
-        : "Backup control-plane proxy is available for this session only.",
-      state.secureTunnel.controlPlaneBackupProxyStorage === "memory-only",
-    );
-  } catch (error) {
-    showToast(
-      error instanceof Error
-        ? error.message
-        : "Could not save the backup proxy.",
-      true,
-    );
-  }
-}
-
-async function clearSecureTunnelBackupProxy(): Promise<void> {
-  const tunnelId = currentState?.secureTunnel.tunnelId ?? null;
-  try {
-    const state = await window.sovereign.configureSecureTunnel({
-      tunnelId,
-      clearControlPlaneBackupProxy: true,
-    });
-    requiredElement<HTMLInputElement>("#secure-tunnel-backup-proxy").value = "";
-    renderState(state);
-    showToast(
-      "Backup control-plane proxy forgotten from Windows-protected storage and memory.",
-    );
-  } catch (error) {
-    showToast(
-      error instanceof Error
-        ? error.message
-        : "Could not clear the backup proxy.",
-      true,
-    );
-  }
-}
-
-async function updateSecureTunnelDirectFallback(
-  enabled: boolean,
-): Promise<void> {
-  const toggle = requiredElement<HTMLInputElement>(
-    "#secure-tunnel-direct-fallback",
-  );
-  toggle.disabled = true;
-  const tunnelId = configuredTunnelIdDraft();
-  if (tunnelId === null) {
-    if (currentState !== null) {
-      renderState(currentState);
-    }
-    showToast("Fix the Tunnel ID before changing direct fallback.", true);
-    return;
-  }
-  const primaryDraft = requiredElement<HTMLInputElement>(
-    "#secure-tunnel-proxy",
-  ).value.trim();
-  if (
-    enabled &&
-    primaryDraft.length === 0 &&
-    currentState?.secureTunnel.controlPlaneProxyConfigured !== true
-  ) {
-    if (currentState !== null) {
-      renderState(currentState);
-    }
-    showToast("Direct fallback requires a configured primary proxy.", true);
-    return;
-  }
-  try {
-    const state = await window.sovereign.configureSecureTunnel({
-      tunnelId,
-      ...(primaryDraft.length === 0
-        ? {}
-        : { controlPlaneProxyUrl: primaryDraft }),
-      controlPlaneDirectFallbackEnabled: enabled,
-    });
-    if (primaryDraft.length > 0) {
-      requiredElement<HTMLInputElement>("#secure-tunnel-proxy").value = "";
-    }
-    renderState(state);
-    showToast(
-      enabled ? "Direct fallback enabled." : "Direct fallback disabled.",
-    );
-  } catch (error) {
-    if (currentState !== null) {
-      renderState(currentState);
-    }
-    showToast(
-      error instanceof Error
-        ? error.message
-        : "Could not update direct fallback.",
-      true,
-    );
-  }
-}
-
-async function updatePermissionProfile(
-  profile: DesktopPermissionProfile,
-): Promise<void> {
-  try {
-    const state = await window.sovereign.setPermissionProfile(profile);
-    renderState(state);
-    const applied = state.permissionProfile === profile;
-    showToast(
-      applied
-        ? `${permissionProfileLabels[profile]} enabled for connected ChatGPT sessions.`
-        : "Permission change cancelled.",
-    );
-  } catch (error) {
-    showToast(
-      error instanceof Error
-        ? error.message
-        : "Could not update ChatGPT permission.",
-      true,
-    );
-  }
-}
-
-function activateView(view: ViewId): void {
-  if (
-    uiSettings.experienceMode === "simple" &&
-    (view === "terminal" ||
-      view === "python" ||
-      view === "browser" ||
-      view === "computer" ||
-      view === "workflows")
-  ) {
-    view = "overview";
-  }
+function activateView(requested: ViewId): void {
+  const view = normalizeViewId(requested);
+  if (view !== "overview") connectionsController.close();
+  if (view !== "overview" && uiSettings.experienceMode === "simple") setExperienceMode("full");
+  if (view === "settings" && currentView !== "settings") selectPermissionScope(currentState?.activeDesktopWorkspace?.id ?? null);
   currentView = view;
   requiredElement<HTMLElement>(".content-scroll").scrollTop = 0;
   try {
@@ -4036,7 +2592,9 @@ function activateView(view: ViewId): void {
     }
   }
   for (const section of document.querySelectorAll<HTMLElement>(".view")) {
-    section.classList.toggle("is-active", section.dataset.viewPanel === view);
+    const active = section.dataset.viewPanel === view;
+    section.classList.toggle("is-active", active);
+    section.hidden = !active;
   }
 
   const definition = getViewDefinition(view);
@@ -4052,11 +2610,15 @@ function activateView(view: ViewId): void {
   );
   if (definition.navigationSection === "execute") {
     executeSection.classList.remove("is-collapsed");
+    requiredElement<HTMLElement>("#execute-group").hidden = false;
     requiredElement<HTMLButtonElement>("#execute-group-toggle").setAttribute(
       "aria-expanded",
       "true",
     );
   }
+  if (requested === "agent") connectionsController.open("chatgpt");
+  if (requested === "runs") tasksController.showRunHistory();
+  if (view === "approvals") approvalsAuditController.activate();
   if (view === "python") {
     void pythonController.activate();
   } else if (view === "workflows") {
@@ -4075,6 +2637,7 @@ function setSettingsTab(
   focus = false,
   refreshData = true,
 ): void {
+  if (tab === "host") tab = "appearance";
   try {
     window.localStorage.setItem(LAST_SETTINGS_TAB_KEY, tab);
   } catch {
@@ -4105,7 +2668,7 @@ function setSettingsTab(
   if (!refreshData) {
     return;
   }
-  if (tab === "host") {
+  if (tab === "appearance") {
     void refreshHostStartupState();
   } else if (tab === "diagnostics") {
     void Promise.all([
@@ -4118,33 +2681,13 @@ function setSettingsTab(
   }
 }
 
-function setRunsTab(tab: "runs" | "audit", focus = false): void {
-  try {
-    window.localStorage.setItem(LAST_RUNS_TAB_KEY, tab);
-  } catch {
-    // Navigation persistence is best-effort.
-  }
-  let activeButton: HTMLButtonElement | null = null;
-  for (const button of document.querySelectorAll<HTMLButtonElement>(
-    '#view-runs [role="tab"][data-runs-tab]',
-  )) {
-    const active = button.dataset.runsTab === tab;
-    button.classList.toggle("is-active", active);
-    button.setAttribute("aria-selected", active ? "true" : "false");
-    button.tabIndex = active ? 0 : -1;
-    if (active) {
-      activeButton = button;
-    }
-  }
-  for (const pane of document.querySelectorAll<HTMLElement>(
-    "[data-runs-pane]",
-  )) {
-    const active = pane.dataset.runsPane === tab;
-    pane.classList.toggle("is-active", active);
-    pane.hidden = !active;
-  }
-  if (focus) {
-    activeButton?.focus();
+function setRunsTab(tab: "runs" | "audit"): void {
+  if (tab === "audit") {
+    activateView("approvals");
+    approvalsAuditController.activate("audit");
+  } else {
+    activateView("tasks");
+    tasksController.showRunHistory();
   }
 }
 
@@ -4246,6 +2789,7 @@ for (const button of document.querySelectorAll<HTMLButtonElement>(
     const requestedView = button.dataset.openView;
     if (isViewId(requestedView)) {
       activateView(requestedView);
+      if (button.dataset.settingsTarget === "security") setSettingsTab("security");
       if (requestedView === "tasks" && button.dataset.taskId !== undefined) {
         void tasksController.openTask(button.dataset.taskId);
       } else if (
@@ -4279,48 +2823,13 @@ for (const button of document.querySelectorAll<HTMLButtonElement>(
     }
   });
 }
-for (const button of document.querySelectorAll<HTMLButtonElement>(
-  "[data-status-view]",
-)) {
-  button.addEventListener("click", () => {
-    const requestedView = button.dataset.statusView;
-    if (isViewId(requestedView)) {
-      activateView(requestedView);
-      if (requestedView === "tasks" && button.dataset.taskId !== undefined) {
-        void tasksController.openTask(button.dataset.taskId);
-      }
-    }
-  });
-}
-for (const button of document.querySelectorAll<HTMLButtonElement>(
-  "[data-status-settings]",
-)) {
-  button.addEventListener("click", () => {
-    if (button.id === "status-workspace-action" && currentState?.activeDesktopWorkspace) {
-      activateView("tasks");
-      tasksController.showProjects();
-      void tasksController.selectProject(currentState.activeDesktopWorkspace.projectId);
-      return;
-    }
-    const tab = button.dataset.statusSettings;
-    if (
-      tab === "appearance" ||
-      tab === "host" ||
-      tab === "security" ||
-      tab === "diagnostics"
-    ) {
-      activateView("settings");
-      setSettingsTab(tab);
-    }
-  });
-}
-
 requiredElement<HTMLButtonElement>("#execute-group-toggle").addEventListener(
   "click",
   () => {
     const section = requiredElement<HTMLElement>(".navigation-execute-section");
     const collapsed = !section.classList.contains("is-collapsed");
     section.classList.toggle("is-collapsed", collapsed);
+    requiredElement<HTMLElement>("#execute-group").hidden = collapsed;
     requiredElement<HTMLButtonElement>("#execute-group-toggle").setAttribute(
       "aria-expanded",
       collapsed ? "false" : "true",
@@ -4344,18 +2853,6 @@ for (const button of document.querySelectorAll<HTMLButtonElement>(
 )) {
   button.addEventListener("click", () => activateSettingsButton(button));
 }
-const activateRunsButton = (candidate: HTMLButtonElement): void => {
-  const tab = candidate.dataset.runsTab;
-  if (tab === "runs" || tab === "audit") {
-    setRunsTab(tab, true);
-  }
-};
-for (const button of document.querySelectorAll<HTMLButtonElement>(
-  '#view-runs [role="tab"][data-runs-tab]',
-)) {
-  button.addEventListener("click", () => activateRunsButton(button));
-}
-
 const activateOutputButton = (candidate: HTMLButtonElement): void => {
   const tab = candidate.dataset.runOutputTab;
   if (tab === "stdout" || tab === "stderr") {
@@ -4381,8 +2878,7 @@ document.addEventListener(
     }
     if (button.dataset.settingsTab !== undefined) {
       handleTablistKeydown(event, activateSettingsButton);
-    } else if (button.dataset.runsTab !== undefined) {
-      handleTablistKeydown(event, activateRunsButton);
+
     } else if (button.dataset.runOutputTab !== undefined) {
       handleTablistKeydown(event, activateOutputButton);
     }
@@ -4415,146 +2911,64 @@ requiredElement<HTMLSelectElement>("#capability-level-filter").addEventListener(
     }
   },
 );
-requiredElement<HTMLInputElement>("#audit-search").addEventListener(
-  "input",
-  (event) => {
-    const target = event.currentTarget;
-    if (target instanceof HTMLInputElement) {
-      auditSearchQuery = target.value;
-      renderAudit(latestAuditReceipts);
-    }
-  },
-);
-requiredElement<HTMLSelectElement>("#audit-outcome-filter").addEventListener(
-  "change",
-  (event) => {
-    const target = event.currentTarget;
-    if (target instanceof HTMLSelectElement) {
-      auditOutcomeFilter = target.value;
-      renderAudit(latestAuditReceipts);
-    }
-  },
-);
-
 requiredElement<HTMLButtonElement>("#sidebar-toggle").addEventListener(
   "click",
   () => {
     setSidebarCollapsed(!uiSettings.sidebarCollapsed);
   },
 );
-requiredElement<HTMLInputElement>(
-  "#sidebar-collapsed-setting",
-).addEventListener("change", (event) => {
-  const target = event.currentTarget;
-  if (target instanceof HTMLInputElement) {
-    setSidebarCollapsed(target.checked);
-  }
+for (const selector of ["#ui-language", "#ui-experience-mode", "#ui-startup-view", "#ui-scale", "#ui-font-scale", "#ui-reduced-motion", "#sidebar-collapsed-setting", "#pref-theme"]) {
+  requiredElement<HTMLElement>(selector).addEventListener("change", () => {
+    const input = <T extends HTMLInputElement | HTMLSelectElement>(id: string) => requiredElement<T>(id);
+    uiSettingsDraft = normalizeUiSettings({
+      language: input("#ui-language").value, experienceMode: input("#ui-experience-mode").value,
+      startupView: input("#ui-startup-view").value, refreshIntervalMs: Number(input("#ui-refresh-interval").value),
+      uiScale: Number(input("#ui-scale").value), fontScale: Number(input("#ui-font-scale").value),
+      theme: input("#pref-theme").value, reducedMotion: input<HTMLInputElement>("#ui-reduced-motion").checked,
+      sidebarCollapsed: input<HTMLInputElement>("#sidebar-collapsed-setting").checked,
+    }, DEFAULT_UI_SETTINGS);
+    if (selector === "#ui-language") applyLanguage(uiSettingsDraft.language);
+    if (selector === "#pref-theme") applyTheme(uiSettingsDraft.theme);
+    if (selector === "#ui-scale") applyUiScale(uiSettingsDraft.uiScale);
+    if (selector === "#ui-font-scale") applyFontScale(uiSettingsDraft.fontScale);
+    if (selector === "#ui-reduced-motion") applyReducedMotion(uiSettingsDraft.reducedMotion);
+    if (selector === "#sidebar-collapsed-setting") applySidebarState(uiSettingsDraft.sidebarCollapsed);
+  });
+}
+requiredElement<HTMLSelectElement>("#ui-refresh-interval").addEventListener("change", event => {
+  const refreshIntervalMs = normalizeUiSettings({ ...uiSettings, refreshIntervalMs: Number((event.currentTarget as HTMLSelectElement).value) }, DEFAULT_UI_SETTINGS).refreshIntervalMs;
+  uiSettings = { ...uiSettings, refreshIntervalMs };
+  uiSettingsDraft = { ...uiSettingsDraft, refreshIntervalMs };
+  persistUiSettings();
+  schedulePolling();
 });
-requiredElement<HTMLSelectElement>("#ui-language").addEventListener(
-  "change",
-  (event) => {
-    const target = event.currentTarget;
-    if (target instanceof HTMLSelectElement) {
-      const language: UiLanguage = target.value === "en" ? "en" : "zh-CN";
-      uiSettings = { ...uiSettings, language };
-      persistUiSettings();
-      applyLanguage(language);
-    }
-  },
-);
-requiredElement<HTMLSelectElement>("#ui-experience-mode").addEventListener(
-  "change",
-  (event) => {
-    const target = event.currentTarget;
-    if (target instanceof HTMLSelectElement) {
-      const experienceMode: UiExperienceMode =
-        target.value === "full" ? "full" : "simple";
-      uiSettings = { ...uiSettings, experienceMode };
-      persistUiSettings();
-      applyExperienceMode(experienceMode);
-      showToast(
-        experienceMode === "simple"
-          ? "Simple mode enabled. Advanced execution and diagnostics are hidden."
-          : "Full mode enabled.",
-      );
-    }
-  },
-);
-requiredElement<HTMLSelectElement>("#ui-startup-view").addEventListener(
-  "change",
-  (event) => {
-    const target = event.currentTarget;
-    if (target instanceof HTMLSelectElement) {
-      const startupView: UiStartupView =
-        target.value === "tasks" ||
-        target.value === "agent" ||
-        target.value === "runs" ||
-        target.value === "last"
-          ? target.value
-          : "overview";
-      uiSettings = { ...uiSettings, startupView };
-      persistUiSettings();
-    }
-  },
-);
-requiredElement<HTMLSelectElement>("#ui-refresh-interval").addEventListener(
-  "change",
-  (event) => {
-    const target = event.currentTarget;
-    if (target instanceof HTMLSelectElement) {
-      const value = Number(target.value);
-      if (
-        value === 1000 ||
-        value === 3000 ||
-        value === 5000 ||
-        value === 10000
-      ) {
-        uiSettings = { ...uiSettings, refreshIntervalMs: value };
-        persistUiSettings();
-        schedulePolling();
-      }
-    }
-  },
-);
-requiredElement<HTMLSelectElement>("#ui-scale").addEventListener(
-  "change",
-  (event) => {
-    const target = event.currentTarget;
-    if (target instanceof HTMLSelectElement) {
-      const value = Number(target.value);
-      if (value === 1 || value === 1.1 || value === 1.25 || value === 1.5) {
-        uiSettings = { ...uiSettings, uiScale: value };
-        persistUiSettings();
-        applyUiScale(value);
-      }
-    }
-  },
-);
-requiredElement<HTMLSelectElement>("#ui-font-scale").addEventListener(
-  "change",
-  (event) => {
-    const target = event.currentTarget;
-    if (target instanceof HTMLSelectElement) {
-      const value = Number(target.value);
-      if (value === 1 || value === 1.1 || value === 1.2 || value === 1.3) {
-        uiSettings = { ...uiSettings, fontScale: value };
-        persistUiSettings();
-        applyFontScale(value);
-      }
-    }
-  },
-);
-requiredElement<HTMLInputElement>("#ui-reduced-motion").addEventListener(
-  "change",
-  (event) => {
-    const target = event.currentTarget;
-    if (target instanceof HTMLInputElement) {
-      uiSettings = { ...uiSettings, reducedMotion: target.checked };
-      persistUiSettings();
-      applyReducedMotion(target.checked);
-    }
-  },
-);
+requiredElement<HTMLButtonElement>("#v2-save-preferences").addEventListener("click", saveInterfaceSettings);
+requiredElement<HTMLButtonElement>("#v2-save-workspace").addEventListener("click", () => {
+  if (permissionDraft !== null) void updatePermissionProfile(permissionDraft);
+});
+requiredElement<HTMLButtonElement>("#v2-mode-expand").addEventListener("click", () => setExperienceMode("full"));
+requiredElement<HTMLButtonElement>("#v2-mode-simple").addEventListener("click", () => setExperienceMode("simple"));
+requiredElement<HTMLButtonElement>("#v2-active-previous").addEventListener("click", () => activeWorkCarousel.move(-1));
+requiredElement<HTMLButtonElement>("#v2-active-next").addEventListener("click", () => activeWorkCarousel.move(1));
+requiredElement<HTMLButtonElement>("#settings-connection-advanced").addEventListener("click", () => connectionsController.open("advanced"));
+requiredElement<HTMLButtonElement>("#v2-refresh-diagnostics").addEventListener("click", () => setSettingsTab("diagnostics"));
+requiredElement<HTMLButtonElement>("#v2-about").addEventListener("click", () => showToast(`Sovereign ${currentState?.runtimeVersion ?? ""}`));
+requiredElement<HTMLButtonElement>("#task-project-workspace-permissions").addEventListener("click", async event => {
+  const target = event.currentTarget as HTMLButtonElement;
+  const workspaceId = target.dataset.workspaceId;
+  if (!workspaceId || target.disabled || permissionNavigationPending) return;
+  permissionNavigationPending = true;
+  try {
+    const state = await window.sovereign.getState();
+    if (currentView !== "tasks" || target.dataset.workspaceId !== workspaceId) return;
+    if (state.activeDesktopWorkspace?.id !== workspaceId) { showToast("Reopen permissions from the active project.", true); return; }
+    renderState(state);
+    activateView("settings");
+    selectPermissionScope(workspaceId);
+    setSettingsTab("security");
+  } catch { showToast("Could not read workspace permissions.", true); }
+  finally { permissionNavigationPending = false; }
+});
 requiredElement<HTMLButtonElement>(
   "#reset-interface-settings",
 ).addEventListener("click", resetInterfaceSettings);
@@ -4633,44 +3047,10 @@ const chooseWorkspace = (): Promise<void> =>
     () => window.sovereign.chooseWorkspace(),
     "Workspace authorization updated.",
   );
-requiredElement<HTMLButtonElement>("#choose-workspace").addEventListener(
-  "click",
-  () => void chooseWorkspace(),
-);
-requiredElement<HTMLButtonElement>("#setup-choose-workspace").addEventListener(
-  "click",
-  () => void chooseWorkspace(),
-);
-requiredElement<HTMLButtonElement>("#workspace-page-choose").addEventListener(
-  "click",
-  () => void chooseWorkspace(),
-);
-requiredElement<HTMLButtonElement>("#simple-overview-primary").addEventListener(
-  "click",
-  (event) => {
-    const target = event.currentTarget;
-    if (!(target instanceof HTMLButtonElement)) {
-      return;
-    }
-    const action = target.dataset.simpleOverviewAction as
-      SimpleOverviewAction | undefined;
-    if (action === "choose-workspace") {
-      void chooseWorkspace();
-    } else if (action === "start-runtime") {
-      void runStateAction(
-        () => window.sovereign.start(),
-        "Local Gateway started.",
-      );
-    } else if (action === "enable-host") {
-      void enableRemoteHostMode();
-    } else if (action === "open-agent") {
-      activateView("agent");
-    } else if (action === "open-settings") {
-      activateView("settings");
-      setSettingsTab("host");
-    }
-  },
-);
+requiredElement<HTMLButtonElement>("#workspace-page-choose").addEventListener("click", () => {
+  if (permissionScopeId === null) void chooseWorkspace();
+  else { activateView("tasks"); tasksController.showProjects(); }
+});
 requiredElement<HTMLButtonElement>("#start-runtime").addEventListener(
   "click",
   () => {
@@ -4690,10 +3070,6 @@ requiredElement<HTMLButtonElement>("#stop-runtime").addEventListener(
   },
 );
 requiredElement<HTMLButtonElement>("#refresh-runtime").addEventListener(
-  "click",
-  () => void refreshAll(),
-);
-requiredElement<HTMLButtonElement>("#refresh-audit").addEventListener(
   "click",
   () => void refreshAll(),
 );
@@ -4759,140 +3135,6 @@ for (const selector of [
     void updateTunnelAutomation();
   });
 }
-requiredElement<HTMLButtonElement>("#web-copy-connection").addEventListener(
-  "click",
-  () => {
-    void copyConnectionBundle();
-  },
-);
-requiredElement<HTMLInputElement>("#secure-tunnel-id").addEventListener(
-  "input",
-  (event) => {
-    const target = event.currentTarget;
-    if (target instanceof HTMLInputElement) {
-      secureTunnelIdDraft = target.value;
-      secureTunnelIdDirty = true;
-      updateTunnelStartAvailability();
-    }
-  },
-);
-requiredElement<HTMLButtonElement>("#secure-tunnel-choose").addEventListener(
-  "click",
-  () => {
-    void chooseSecureTunnelExecutable();
-  },
-);
-requiredElement<HTMLButtonElement>("#secure-tunnel-start").addEventListener(
-  "click",
-  () => {
-    void startSecureTunnel();
-  },
-);
-requiredElement<HTMLButtonElement>("#secure-tunnel-stop").addEventListener(
-  "click",
-  () => {
-    void stopSecureTunnel();
-  },
-);
-for (const selector of [
-  "#secure-tunnel-refresh",
-  "#secure-tunnel-retry",
-] as const) {
-  requiredElement<HTMLButtonElement>(selector).addEventListener("click", () => {
-    void refreshSecureTunnel();
-  });
-}
-requiredElement<HTMLButtonElement>("#secure-tunnel-clear-key").addEventListener(
-  "click",
-  () => {
-    void clearSecureTunnelKey();
-  },
-);
-requiredElement<HTMLInputElement>("#secure-tunnel-api-key").addEventListener(
-  "input",
-  () => {
-    updateTunnelStartAvailability();
-  },
-);
-requiredElement<HTMLInputElement>("#secure-tunnel-api-key").addEventListener(
-  "keydown",
-  (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      void startSecureTunnel();
-    }
-  },
-);
-requiredElement<HTMLButtonElement>(
-  "#secure-tunnel-save-proxy",
-).addEventListener("click", () => {
-  void saveSecureTunnelProxy();
-});
-requiredElement<HTMLButtonElement>(
-  "#secure-tunnel-clear-proxy",
-).addEventListener("click", () => {
-  void clearSecureTunnelProxy();
-});
-requiredElement<HTMLInputElement>("#secure-tunnel-proxy").addEventListener(
-  "keydown",
-  (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      void saveSecureTunnelProxy();
-    }
-  },
-);
-requiredElement<HTMLButtonElement>(
-  "#secure-tunnel-save-backup-proxy",
-).addEventListener("click", () => {
-  void saveSecureTunnelBackupProxy();
-});
-requiredElement<HTMLButtonElement>(
-  "#secure-tunnel-clear-backup-proxy",
-).addEventListener("click", () => {
-  void clearSecureTunnelBackupProxy();
-});
-requiredElement<HTMLInputElement>(
-  "#secure-tunnel-backup-proxy",
-).addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    void saveSecureTunnelBackupProxy();
-  }
-});
-requiredElement<HTMLInputElement>(
-  "#secure-tunnel-direct-fallback",
-).addEventListener("change", (event) => {
-  const target = event.currentTarget;
-  if (target instanceof HTMLInputElement) {
-    void updateSecureTunnelDirectFallback(target.checked);
-  }
-});
-requiredElement<HTMLButtonElement>("#web-save-bridge").addEventListener(
-  "click",
-  () => {
-    const value =
-      requiredElement<HTMLInputElement>("#web-bridge-url").value.trim();
-    void updateWebBridgeUrl(value.length === 0 ? null : value);
-  },
-);
-requiredElement<HTMLButtonElement>("#web-clear-bridge").addEventListener(
-  "click",
-  () => {
-    void updateWebBridgeUrl(null);
-  },
-);
-requiredElement<HTMLInputElement>("#web-bridge-url").addEventListener(
-  "keydown",
-  (event) => {
-    const target = event.currentTarget;
-    if (event.key === "Enter" && target instanceof HTMLInputElement) {
-      event.preventDefault();
-      const value = target.value.trim();
-      void updateWebBridgeUrl(value.length === 0 ? null : value);
-    }
-  },
-);
 for (const button of document.querySelectorAll<HTMLButtonElement>(
   "[data-permission-profile]",
 )) {
@@ -4903,7 +3145,8 @@ for (const button of document.querySelectorAll<HTMLButtonElement>(
       profile === "workspace" ||
       profile === "consequential"
     ) {
-      void updatePermissionProfile(profile);
+      permissionDraft = profile;
+      if (currentState) renderPermissionChoiceState(currentState);
     }
   });
 }
@@ -4911,14 +3154,20 @@ for (const button of document.querySelectorAll<HTMLButtonElement>(
   "[data-bypass-toggle]",
 )) {
   button.addEventListener("click", () => {
-    void updatePermissionProfile(
-      currentState?.permissionProfile === "bypass"
-        ? currentState.rememberedPermissionProfile
-        : "bypass",
-    );
+    if (currentState === null) return;
+    const context = permissionContext(currentState);
+    if (context === null) return;
+    permissionDraft = (permissionDraft ?? context.permissionProfile) === "bypass" ? context.rememberedPermissionProfile : "bypass";
+    renderPermissionChoiceState(currentState);
   });
 }
 
+const unsubscribeApprovalCenter = window.sovereign.onApprovalCenterRequested?.(() => {
+  activateView("approvals"); approvalsAuditController.activate("approvals");
+});
+const themeMedia = window.matchMedia("(prefers-color-scheme: dark)");
+const syncSystemTheme = () => { if (uiSettingsDraft.theme === "system") applyTheme("system"); };
+themeMedia.addEventListener("change", syncSystemTheme);
 const unsubscribe = window.sovereign.onStateChanged((state) => {
   // State events already contain the fresh runtime snapshot. Rendering them directly avoids
   // event-driven full IPC sweeps, stale-response races and refresh storms.
@@ -4929,6 +3178,10 @@ window.addEventListener(
   "beforeunload",
   () => {
     unsubscribe();
+    unsubscribeApprovalCenter?.();
+    approvalsAuditController.dispose();
+    connectionsController.dispose();
+    themeMedia.removeEventListener("change", syncSystemTheme);
     document.removeEventListener("visibilitychange", handleVisibilityChange);
     stopLocalizationObserver?.();
     rendererUpdateSettlementPoller.dispose();
@@ -4953,9 +3206,6 @@ setSettingsTab(
   false,
   false,
 );
-setRunsTab(
-  readStoredChoice(LAST_RUNS_TAB_KEY, ["runs", "audit"] as const, "runs"),
-);
 setRunOutputTab(
   readStoredChoice(
     LAST_RUN_OUTPUT_TAB_KEY,
@@ -4965,9 +3215,9 @@ setRunOutputTab(
 );
 stopLocalizationObserver = observeLocalization(
   appRoot,
-  () => uiSettings.language,
+  () => uiSettingsDraft.language,
 );
-applyFontScale(uiSettings.fontScale);
+applyFontScale(uiSettingsDraft.fontScale);
 startFontScaleObserver();
 if (uiSettings.uiScale !== DEFAULT_UI_SETTINGS.uiScale) {
   window.addEventListener(

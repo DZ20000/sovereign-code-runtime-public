@@ -19,9 +19,10 @@ function httpsUrl(value: string): URL {
   return url;
 }
 
-export async function loadGeminiAuthorizationServer(discoveryUrl: string): Promise<OAuthMetadata> {
+export async function loadGeminiAuthorizationServer(discoveryUrl: string, signal?: AbortSignal): Promise<OAuthMetadata> {
   const endpoint = httpsUrl(discoveryUrl);
-  const response = await fetch(endpoint, { redirect: "error", signal: AbortSignal.timeout(5000) });
+  const requestSignal = signal === undefined ? AbortSignal.timeout(5000) : AbortSignal.any([signal, AbortSignal.timeout(5000)]);
+  const response = await fetch(endpoint, { redirect: "error", signal: requestSignal });
   if (!response.ok) throw new Error("OAuth server discovery failed.");
   const metadata = OAuthMetadataSchema.parse(await response.json());
   httpsUrl(metadata.issuer);

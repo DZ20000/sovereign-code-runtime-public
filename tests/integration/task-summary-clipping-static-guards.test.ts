@@ -8,7 +8,7 @@ function source(...parts: string[]): string {
 
 describe("task summary clipping static guards", () => {
   it("keeps the compact current-work clamp intentional and exposes its full text", () => {
-    const styles = source("apps", "desktop", "src", "renderer", "task-board.css");
+    const styles = source("apps", "desktop", "src", "renderer", "v2.css");
     const controller = source(
       "apps",
       "desktop",
@@ -16,11 +16,11 @@ describe("task summary clipping static guards", () => {
       "renderer",
       "tasks-controller.ts",
     );
-    const rule = styles.match(/\.task-summary-current\s*\{[^}]+\}/u)?.[0];
+    const rule = styles.match(/\.task-summary-current[^{}]*\{[^}]+\}/u)?.[0];
 
     expect(rule).toBeDefined();
     expect(rule).toContain("overflow: hidden");
-    expect(rule).toContain("text-overflow: ellipsis");
+    expect(rule).toContain("overflow-wrap: anywhere");
     expect(rule).toContain("-webkit-line-clamp: 2");
     expect(controller).toContain(
       "const currentWork = listTaskCurrentWork(task);",

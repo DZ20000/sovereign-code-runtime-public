@@ -1,9 +1,8 @@
-import type {
-  DesktopApprovalDecision,
-  DesktopApprovalView,
-} from "../shared.js";
-import { localizeSubtree, observeLocalization, type UiLanguage } from "./localization.js";
+import { ApprovalDecisionState } from "./approval-decision-state.js";
+import type { UiLanguage } from "./localization.js";
+import { applyTheme, type UiTheme } from "./ui-theme.js";
 
+let theme: UiTheme = "system";
 let language: UiLanguage = navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
 try {
   const settings: unknown = JSON.parse(localStorage.getItem("sovereign.ui.settings.v1") ?? "null");
@@ -12,133 +11,131 @@ try {
     if (preferences.language === "en" || preferences.language === "zh-CN") language = preferences.language;
     const fontScale = typeof preferences.fontScale === "number" && [1, 1.1, 1.2, 1.3].includes(preferences.fontScale) ? preferences.fontScale : 1;
     const uiScale = typeof preferences.uiScale === "number" && [1, 1.1, 1.25, 1.5].includes(preferences.uiScale) ? preferences.uiScale : 1;
-    document.documentElement.style.fontSize = `${14 * fontScale * uiScale}px`;
+    document.documentElement.style.fontSize = String(14 * fontScale * uiScale) + "px";
     document.documentElement.dataset.reducedMotion = String(preferences.reducedMotion === true);
+    if (preferences.theme === "dark" || preferences.theme === "light") theme = preferences.theme;
   }
 } catch {
-  // Unavailable or malformed UI preferences do not block an approval decision.
+  // UI preferences cannot prevent a fail-closed approval decision.
 }
-localizeSubtree(document.body, language);
-const stopLocalization = observeLocalization(document.body, () => language);
+applyTheme(theme);
+const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
+const followSystemTheme = () => { if (theme === "system") applyTheme(theme); };
+systemTheme.addEventListener("change", followSystemTheme);
+document.documentElement.lang = language;
+const copy = (en: string, zh: string): string => language === "zh-CN" ? zh : en;
 
-function requiredElement<T extends HTMLElement>(selector: string): T {
-  const element = document.querySelector<T>(selector);
-  if (element === null) {
-    throw new Error(`Missing approval element: ${selector}`);
-  }
-  return element;
+function element<T extends HTMLElement>(id: string): T {
+  const result = document.getElementById(id);
+  if (result === null) throw new Error("Missing approval element: " + id);
+  return result as T;
 }
+const shell = document.querySelector<HTMLElement>(".approval-shell")!;
+const title = element("approval-title");
+const subtitle = element("approval-subtitle");
+const status = element("approval-status");
+const countdown = element("approval-countdown");
+const allow = element<HTMLButtonElement>("approval-allow");
+const deny = element<HTMLButtonElement>("approval-deny");
+const drop = element<HTMLButtonElement>("approval-drop");
+const close = element<HTMLButtonElement>("approval-close");
+const back = element<HTMLButtonElement>("approval-return");
+const feedback = element("approval-feedback");
+let lastRenderKey = "";
+let dismissalFailed = false;
 
-const shell = requiredElement<HTMLElement>(".approval-shell");
-const title = requiredElement<HTMLElement>("#approval-title");
-const message = requiredElement<HTMLElement>("#approval-message");
-const tool = requiredElement<HTMLElement>("#approval-tool");
-const detail = requiredElement<HTMLElement>("#approval-detail");
-const countdown = requiredElement<HTMLElement>("#approval-countdown");
-const allowButton = requiredElement<HTMLButtonElement>("#approval-allow");
-const denyButton = requiredElement<HTMLButtonElement>("#approval-deny");
-const dropButton = requiredElement<HTMLButtonElement>("#approval-drop");
-const feedback = requiredElement<HTMLElement>("#approval-feedback");
-
-let current: DesktopApprovalView | null = null;
-let timer: number | null = null;
-let resolving = false;
-let expired = false;
-
-function setButtonsDisabled(disabled: boolean): void {
-  allowButton.disabled = disabled;
-  denyButton.disabled = disabled;
-  dropButton.disabled = disabled;
+function render(): void {
+  const { current, phase } = state;
+  const renderKey = JSON.stringify([current?.id, phase, state.remainingSeconds(), language, dismissalFailed]);
+  if (renderKey === lastRenderKey) return;
+  lastRenderKey = renderKey;
+  const context = current?.context;
+  const handoff = context?.administratorRequired === true;
+  const pending = phase === "pending";
+  const inactive = phase === "expired" || phase === "uncertain" || phase === "unavailable";
+  shell.dataset.phase = phase;
+  shell.dataset.risk = handoff ? "handoff" : context?.destructive === true ? "destructive" : "normal";
+  shell.classList.toggle("is-flood", current?.burstDetected === true);
+  title.textContent = phase === "uncertain" ? copy("This decision is not confirmed", "这次决定尚未确认")
+    : phase === "expired" ? copy("Request expired", "请求已过期")
+      : phase === "unavailable" ? copy("Approval unavailable", "审批请求不可用")
+        : phase === "loading" ? copy("Loading request…", "正在读取请求…")
+          : handoff ? copy("Handle this step in Windows", "这一步需要你在 Windows 中处理")
+            : context?.destructive ? copy("Allow this destructive action?", "允许这次破坏性操作？")
+              : context?.target.kind === "command" ? copy("Allow this command?", "允许运行这条命令？")
+                : copy("Allow this tool call?", "允许这次工具调用？");
+  subtitle.textContent = handoff ? copy("Manual handoff · no background elevation", "人工接管 · 不在后台提权")
+    : copy("Independent approval window · review this request", "独立审批窗口 · 请核对请求内容");
+  status.textContent = phase === "loading" ? copy("Loading", "正在读取")
+    : phase === "submitting" ? copy("Waiting for confirmation", "等待本次决定确认")
+    : phase === "uncertain" ? copy("Needs checking", "需要检查")
+      : phase === "expired" ? copy("Expired", "已过期")
+        : phase === "unavailable" ? copy("Unavailable", "不可用")
+          : handoff ? copy("Administrator rights required", "需要管理员权限")
+            : current?.burstDetected ? copy("Repeated requests", "连续请求")
+              : copy("Waiting for a decision", "等待决定");
+  const seconds = state.remainingSeconds();
+  const time = String(Math.floor(seconds / 60)).padStart(2, "0") + ":" + String(seconds % 60).padStart(2, "0");
+  countdown.textContent = current === null ? "—" : (phase === "expired" ? time : copy("Remaining ", "剩余 ") + time);
+  element("approval-requester").textContent = context?.requesterId ?? copy("Unknown requester", "请求方未知");
+  element("approval-target").textContent = context?.target.value ?? current?.toolName ?? "—";
+  element("approval-tool").textContent = current?.toolName ?? "—";
+  element("approval-workspace").textContent = context?.workspaceId ? context.workspaceId + " · " : "";
+  element("approval-detail").textContent = current?.detail ?? "";
+  element("approval-detail-label").textContent = copy("Request details", "请求详情");
+  const level = context === undefined ? "" : (context.permissionLevel === "consequential" ? "L3" : context.permissionLevel === "workspace" ? "L2" : "L1") + " · ";
+  element("approval-message").textContent = phase === "uncertain"
+    ? copy("Check the outcome before continuing.", "请先查看处理结果，再继续。")
+    : phase === "unavailable" ? copy("This request is no longer available for approval.", "当前请求已无法审批。")
+      : phase === "expired" ? copy("This request can no longer be approved.", "不能再批准这个请求。")
+        : handoff ? copy("This window cannot grant administrator rights. Complete the required step in Windows, then check the task result.", "此审批窗口不能授予管理员权限。请在 Windows 中自行完成所需操作，再检查任务结果。")
+          : level + copy("This permission covers exactly one tool call.", "本次授权只覆盖这一条工具调用。");
+  element("approval-guidance").textContent = phase === "uncertain"
+    ? copy("Approval controls are disabled. This request will not be retried.", "当前请求的批准按钮已停用，不会自动重试。")
+    : handoff ? copy("Nothing runs automatically. Manual handoff closes and denies this request.", "此处不会自动运行命令或提权。手动接管会关闭并拒绝本次请求。")
+      : copy("Denying or closing this window does not grant permission.", "拒绝或关闭窗口，将不会授予这次调用权限。");
+  allow.textContent = handoff ? copy("I'll handle this manually", "我会手动处理")
+    : phase === "submitting" ? copy("Submitting…", "提交中…") : copy("Allow once", "仅允许一次");
+  deny.textContent = inactive ? copy("Close", "关闭") : handoff ? copy("Deny and close", "拒绝并关闭") : copy("Deny", "拒绝");
+  drop.textContent = copy("Deny all & drop to L1", "全部拒绝并降至 L1");
+  close.setAttribute("aria-label", copy("Close", "关闭"));
+  back.textContent = copy("Return to approval center", "返回审批中心");
+  allow.hidden = inactive;
+  allow.disabled = !pending;
+  deny.disabled = phase === "loading" || phase === "submitting";
+  close.disabled = phase === "submitting";
+  drop.hidden = current?.burstDetected !== true || inactive;
+  drop.disabled = !pending;
+  back.hidden = phase !== "uncertain" && phase !== "unavailable";
+  if (dismissalFailed) feedback.textContent = copy("Could not close this window. Use the window close control.", "暂时无法关闭，请使用系统窗口关闭按钮。");
+  else if (phase === "submitting") feedback.textContent = copy("Submitting this decision…", "正在提交本次决定…");
+  else if (phase === "uncertain") feedback.textContent = copy("The decision was not acknowledged. No decision is sent again.", "尚未收到决定确认，不会再次发送决定。");
+  else feedback.textContent = "";
 }
-
-function renderCountdown(): void {
-  if (current === null) {
-    countdown.textContent = "—";
-    return;
-  }
-  const remainingMs = Date.parse(current.expiresAt) - Date.now();
-  if (!Number.isFinite(remainingMs) || remainingMs <= 0) {
-    countdown.textContent = language === "zh-CN" ? "已过期" : "Expired";
-    if (!expired) feedback.textContent = "This request has expired. Ask the Agent to try again.";
-    expired = true;
-    setButtonsDisabled(true);
-    return;
-  }
-  const seconds = Math.max(1, Math.ceil(remainingMs / 1_000));
-  countdown.textContent = language === "zh-CN" ? `剩余 ${seconds} 秒` : `${seconds}s remaining`;
+const state = new ApprovalDecisionState(window.sovereignApproval, render);
+async function dismiss(returnToCenter = false): Promise<void> {
+  try { await window.sovereignApproval.dismiss(returnToCenter); }
+  catch { dismissalFailed = true; render(); }
 }
-
-function renderApproval(approval: DesktopApprovalView): void {
-  current = approval;
-  title.textContent = approval.burstDetected ? "Approval flood detected" : approval.title;
-  message.textContent = approval.burstDetected
-    ? "Multiple consequential requests arrived within 10 seconds. Review this request or drop connected authority to L1."
-    : approval.message;
-  tool.textContent = approval.toolName;
-  detail.textContent = approval.detail;
-  shell.classList.toggle("is-flood", approval.burstDetected);
-  dropButton.hidden = !approval.burstDetected;
-  setButtonsDisabled(false);
-  renderCountdown();
-  denyButton.focus();
-  timer = window.setInterval(renderCountdown, 250);
-}
-
-async function resolve(decision: DesktopApprovalDecision): Promise<void> {
-  if (current === null || resolving) {
-    return;
-  }
-  resolving = true;
-  setButtonsDisabled(true);
-  feedback.classList.remove("is-error");
-  feedback.textContent = "Resolving request…";
-  try {
-    await window.sovereignApproval.resolve(current.id, decision);
-  } catch {
-    resolving = false;
-    setButtonsDisabled(false);
-    feedback.classList.add("is-error");
-    feedback.textContent = "Could not submit your decision. Try again while the request is still pending.";
-    renderCountdown();
-  }
-}
-
-allowButton.addEventListener("click", () => {
-  void resolve("allow-once");
+allow.addEventListener("click", () => {
+  void state.decide(state.current?.context?.administratorRequired === true ? "deny" : "allow-once");
 });
-denyButton.addEventListener("click", () => {
-  void resolve("deny");
+deny.addEventListener("click", () => {
+  if (state.phase === "pending") void state.decide("deny");
+  else if (state.phase !== "submitting") void dismiss(state.phase === "expired");
 });
-dropButton.addEventListener("click", () => {
-  void resolve("drop-to-l1");
-});
+drop.addEventListener("click", () => { void state.decide("drop-to-l1"); });
+close.addEventListener("click", () => { void dismiss(); });
+back.addEventListener("click", () => { void dismiss(true); });
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
+  if (event.key === "Escape" && state.phase !== "submitting") {
     event.preventDefault();
-    void resolve("deny");
+    void dismiss();
   }
 });
+const timer = window.setInterval(() => state.tick(), 250);
 window.addEventListener("beforeunload", () => {
-  stopLocalization();
-  if (timer !== null) {
-    window.clearInterval(timer);
-  }
+  window.clearInterval(timer);
+  systemTheme.removeEventListener("change", followSystemTheme);
 }, { once: true });
-
-void window.sovereignApproval.getCurrent().then((approval) => {
-  if (approval === null) {
-    title.textContent = "Approval unavailable";
-    message.textContent = "This request is no longer pending.";
-    tool.textContent = "—";
-    countdown.textContent = language === "zh-CN" ? "已过期" : "Expired";
-    setButtonsDisabled(true);
-    return;
-  }
-  renderApproval(approval);
-}).catch(() => {
-  title.textContent = "Approval unavailable";
-  message.textContent = "Could not load this request. Ask the Agent to try again.";
-  tool.textContent = "—";
-  countdown.textContent = "—";
-  setButtonsDisabled(true);
-});
+void state.load().then(() => { if (state.phase === "pending") deny.focus(); });

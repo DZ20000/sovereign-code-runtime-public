@@ -40,39 +40,9 @@
       "reason": "Existing oversized module captured when the guard was activated; the latest committed main includes one reviewed stylesheet import, and further growth requires a cohesive extraction."
     },
     {
-      "path": "apps/desktop/src/renderer/product-shell.css",
-      "observedLines": 1322,
-      "maximumLines": 1322,
-      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
-    },
-    {
-      "path": "apps/desktop/src/renderer/styles.css",
-      "observedLines": 3538,
-      "maximumLines": 3538,
-      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
-    },
-    {
       "path": "apps/desktop/src/renderer/tasks-controller.ts",
       "observedLines": 1530,
       "maximumLines": 1530,
-      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
-    },
-    {
-      "path": "apps/desktop/src/renderer/ui-refinement.css",
-      "observedLines": 4521,
-      "maximumLines": 4521,
-      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
-    },
-    {
-      "path": "apps/desktop/src/renderer/ui-system.css",
-      "observedLines": 2317,
-      "maximumLines": 2317,
-      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
-    },
-    {
-      "path": "apps/desktop/src/renderer/workbench.css",
-      "observedLines": 4223,
-      "maximumLines": 4223,
       "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
     },
     {
