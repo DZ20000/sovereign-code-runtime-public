@@ -52,6 +52,8 @@ export type GatewayRuntimeToolPackFactory = (
   context: GatewayRuntimeExtensionContext,
 ) => RuntimeToolPack;
 export interface GatewayWorkspaceOptions {
+  /** Relative discovery roots per registered workspace. This never registers or grants access to a directory. */
+  readonly skillRootsByWorkspaceId?: Readonly<Record<string, readonly string[]>>;
   readonly authorizeExternalTool?: (
     request: ExternalToolAuthorizationRequest,
   ) => Promise<boolean> | boolean;
@@ -412,7 +414,11 @@ export async function createWorkspaceRuntime(input: {
   };
   const baseDefinitions = bindDefinitionsToWorkspace(
     [
-      ...createBuiltinTools(adapter),
+      ...createBuiltinTools(adapter, {
+        ...(options.skillRootsByWorkspaceId === undefined ? {} : {
+          skillRootsByWorkspaceId: options.skillRootsByWorkspaceId,
+        }),
+      }),
       ...createCapabilityDirectoryTools(capabilityDirectory),
       ...(options.additionalToolDefinitions ?? []),
       ...(options.additionalToolDefinitionsFactory?.({

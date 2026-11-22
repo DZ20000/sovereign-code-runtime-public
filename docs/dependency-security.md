@@ -1,10 +1,14 @@
 # Dependency security review
 
-Review date: 2026-09-25. The lockfiles, not this prose, identify the resolved graph. Advisory data changes; rerun both production and complete audits on the exact candidate before release.
+Review date: 2026-11-22. The lockfiles, not this prose, identify the resolved graph. Advisory data changes; rerun both production and complete audits on the exact candidate before release.
 
 ## Targeted JavaScript changes
 
-The root pnpm overrides constrain known affected ranges for fast-uri to 3.1.6, qs to 6.16.0, Hono to 4.13.9, and @xmldom/xmldom to 0.9.12. Vitest is pinned to 4.1.11, including its matching mocker implementation. These are configuration requirements; verify their actual resolution and audit results after a frozen install.
+The public release candidate uses MCP SDK 1.32.0, Zod 4.6.6, Vite 8.2.4, Vitest 4.1.12, and Electron 43.8.1. Scoped overrides also update affected URI, proxy, body-parser, HTTP client, glob, and source-map dependencies. The root package manifest and frozen lockfile define the exact ranges. Both production and complete pnpm audits returned zero findings for this graph on the review date; repeat both checks on every candidate.
+
+MCP bearer authentication explicitly checks the token resource as well as its expiry and scope. The SDK update does not replace application audience checks. Tool schemas use Zod 4 native JSON Schema conversion, preserving strict input validation and shared defaults.
+
+The Windows source and release workflows use Node 24.22.1. The Windows x64 executable used for the release was checked against the official Node release checksums before packaging.
 
 Electron Forge 7.11.2 still requests @electron/rebuild 3.x. Its core, core-utils, and shared-types edges are deliberately overridden to @electron/rebuild 4.0.6, which uses node-gyp 12 rather than the older Git-sourced node-gyp chain. This is a scoped, cross-major compatibility exception, not an upstream Forge compatibility guarantee. It requires Node 22.12 or later; this project requires Node 24. Test the real Forge IPC rebuild worker on the declared Node version and perform full native Electron packaging acceptance before claiming that legacy packaging is release-ready.
 
@@ -38,6 +42,21 @@ Primary sources:
 ## Target-specific findings and limits
 
 Cargo and Android findings require their own exact-version and target analysis. A non-Windows Cargo resolution is not proof of Windows executable inclusion; conversely, absence from the Windows target does not resolve risk on other targets. Keep maintenance/unmaintained notices distinct from exploitable-vulnerability claims. The [third-party inventory](../THIRD_PARTY_NOTICES.md) is not a security audit or a binary bill of materials.
+
+### Known non-Windows GTK finding
+
+The frozen Cargo graph still includes glib 0.18.5 on Linux/BSD GUI paths. [RUSTSEC-2024-0429](https://rustsec.org/advisories/RUSTSEC-2024-0429.html) affects the VariantStrIter iterator implementation; the advisory lists glib 0.20.0 and later as patched. GTK 0.18.2 and WebKit2GTK 2.0.2 require the 0.18 line, so adding glib 0.20 directly would not remove the affected transitive copy. This finding is not resolved or suppressed by the JavaScript updates.
+
+For the Windows x64 Portable target, both the default and all-features locked dependency trees contain no glib package. These checks identify target inclusion; they are not a claim that the complete multi-platform Cargo lockfile has zero findings. A Linux/BSD release needs a compatible upstream GTK-stack update or a reviewed source backport with Linux validation before distribution. The upstream fix is [gtk-rs-core pull request 1343](https://github.com/gtk-rs/gtk-rs-core/pull/1343).
+
+To reproduce the Windows-target check:
+
+```powershell
+cargo tree --manifest-path apps/desktop-tauri/src-tauri/Cargo.toml --locked --offline --target x86_64-pc-windows-msvc -i glib
+cargo tree --manifest-path apps/desktop-tauri/src-tauri/Cargo.toml --locked --offline --target x86_64-pc-windows-msvc --all-features -i glib
+```
+
+Both commands returned no matching package for the reviewed target. The corresponding Linux reverse tree includes glib through GTK/WebKit2GTK, Tauri/wry and tray/menu components.
 
 ## Recheck
 

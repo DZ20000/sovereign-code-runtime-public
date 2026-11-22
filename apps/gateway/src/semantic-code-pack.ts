@@ -2,7 +2,6 @@ import { z } from "zod";
 
 import {
   defineTool,
-  objectSchema,
   type RuntimeToolPack,
 } from "@sovereign/toolkit";
 
@@ -12,15 +11,17 @@ const workspaceId = z.string().min(1).max(128);
 const relativePath = z.string().min(1).max(4_096);
 const optionalRelativePath = z.string().max(4_096);
 const namePath = z.string().min(1).max(1_000);
-const maxChars = z.number().int().min(1_024).max(100_000);
+const maxChars = z.number().int().min(1_024).max(100_000).default(50_000);
 
-function semanticCapabilities(): readonly [
-  "workspace.read",
-  "files.read",
-  "search.read",
-] {
-  return ["workspace.read", "files.read", "search.read"];
-}
+const semanticMetadata = {
+  version: "1.0.0",
+  category: "code",
+  requiredCapabilities: ["workspace.read", "files.read", "search.read"],
+  sideEffect: "process",
+  destructive: false,
+  permissionLevel: "observe",
+  approvalMode: "none",
+} as const;
 
 export function createSemanticCodeToolPack(
   provider: SemanticCodeProvider,
@@ -35,20 +36,12 @@ export function createSemanticCodeToolPack(
     definitions: [
       defineTool(
         {
+          ...semanticMetadata,
           name: "code.semantic.status",
-          version: "1.0.0",
           title: "Semantic provider status",
           description:
             "Start or probe the isolated read-only Serena sidecar and return its bounded status and exact reviewed tool allowlist.",
-          category: "code",
           requiredCapabilities: ["system.read", "workspace.read"],
-          sideEffect: "process",
-          destructive: false,
-          permissionLevel: "observe",
-          approvalMode: "none",
-          inputSchema: objectSchema({
-            workspaceId: { type: "string", minLength: 1, maxLength: 128 },
-          }),
         },
         { workspaceId },
         () => provider.probe(),
@@ -56,306 +49,153 @@ export function createSemanticCodeToolPack(
       ),
       defineTool(
         {
+          ...semanticMetadata,
           name: "code.symbols",
-          version: "1.0.0",
           title: "File symbol overview",
           description:
             "Return a compact semantic symbol overview for one contained source file through the reviewed Serena read-only facade.",
-          category: "code",
-          requiredCapabilities: semanticCapabilities(),
-          sideEffect: "process",
-          destructive: false,
-          permissionLevel: "observe",
-          approvalMode: "none",
-          inputSchema: objectSchema(
-            {
-              workspaceId: { type: "string", minLength: 1, maxLength: 128 },
-              path: { type: "string", minLength: 1, maxLength: 4_096 },
-              depth: { type: "integer", minimum: 0, maximum: 3, default: 0 },
-              maxChars: {
-                type: "integer",
-                minimum: 1_024,
-                maximum: 100_000,
-                default: 50_000,
-              },
-            },
-            ["workspaceId", "path"],
-          ),
         },
         {
           workspaceId,
           path: relativePath,
-          depth: z.number().int().min(0).max(3).optional(),
-          maxChars: maxChars.optional(),
+          depth: z.number().int().min(0).max(3).default(0),
+          maxChars,
         },
         (_context, input) =>
           provider.call("get_symbols_overview", {
             relative_path: input.path,
-            depth: input.depth ?? 0,
-            max_answer_chars: input.maxChars ?? 50_000,
+            depth: input.depth,
+            max_answer_chars: input.maxChars,
           }),
         (input) => input.workspaceId,
       ),
       defineTool(
         {
+          ...semanticMetadata,
           name: "code.symbol.find",
-          version: "1.0.0",
           title: "Find semantic symbol",
           description:
             "Find symbols by Serena name-path pattern, optionally restricted to one contained file or directory.",
-          category: "code",
-          requiredCapabilities: semanticCapabilities(),
-          sideEffect: "process",
-          destructive: false,
-          permissionLevel: "observe",
-          approvalMode: "none",
-          inputSchema: objectSchema(
-            {
-              workspaceId: { type: "string", minLength: 1, maxLength: 128 },
-              namePathPattern: {
-                type: "string",
-                minLength: 1,
-                maxLength: 1_000,
-              },
-              path: { type: "string", maxLength: 4_096, default: "" },
-              depth: { type: "integer", minimum: 0, maximum: 3, default: 0 },
-              includeBody: { type: "boolean", default: false },
-              includeInfo: { type: "boolean", default: false },
-              substringMatching: { type: "boolean", default: false },
-              maxMatches: {
-                type: "integer",
-                minimum: 1,
-                maximum: 100,
-                default: 20,
-              },
-              maxChars: {
-                type: "integer",
-                minimum: 1_024,
-                maximum: 100_000,
-                default: 50_000,
-              },
-            },
-            ["workspaceId", "namePathPattern"],
-          ),
         },
         {
           workspaceId,
           namePathPattern: namePath,
-          path: optionalRelativePath.optional(),
-          depth: z.number().int().min(0).max(3).optional(),
-          includeBody: z.boolean().optional(),
-          includeInfo: z.boolean().optional(),
-          substringMatching: z.boolean().optional(),
-          maxMatches: z.number().int().min(1).max(100).optional(),
-          maxChars: maxChars.optional(),
+          path: optionalRelativePath.default(""),
+          depth: z.number().int().min(0).max(3).default(0),
+          includeBody: z.boolean().default(false),
+          includeInfo: z.boolean().default(false),
+          substringMatching: z.boolean().default(false),
+          maxMatches: z.number().int().min(1).max(100).default(20),
+          maxChars,
         },
         (_context, input) =>
           provider.call("find_symbol", {
             name_path_pattern: input.namePathPattern,
-            relative_path: input.path ?? "",
-            depth: input.depth ?? 0,
-            include_body: input.includeBody ?? false,
-            include_info: input.includeInfo ?? false,
-            substring_matching: input.substringMatching ?? false,
-            max_matches: input.maxMatches ?? 20,
-            max_answer_chars: input.maxChars ?? 50_000,
+            relative_path: input.path,
+            depth: input.depth,
+            include_body: input.includeBody,
+            include_info: input.includeInfo,
+            substring_matching: input.substringMatching,
+            max_matches: input.maxMatches,
+            max_answer_chars: input.maxChars,
           }),
         (input) => input.workspaceId,
       ),
       defineTool(
         {
+          ...semanticMetadata,
           name: "code.references",
-          version: "1.0.0",
           title: "Find symbol references",
           description:
             "Find semantic references to one symbol identified by name path and contained source file.",
-          category: "code",
-          requiredCapabilities: semanticCapabilities(),
-          sideEffect: "process",
-          destructive: false,
-          permissionLevel: "observe",
-          approvalMode: "none",
-          inputSchema: objectSchema(
-            {
-              workspaceId: { type: "string", minLength: 1, maxLength: 128 },
-              namePath: { type: "string", minLength: 1, maxLength: 1_000 },
-              path: { type: "string", minLength: 1, maxLength: 4_096 },
-              maxChars: {
-                type: "integer",
-                minimum: 1_024,
-                maximum: 100_000,
-                default: 50_000,
-              },
-            },
-            ["workspaceId", "namePath", "path"],
-          ),
         },
         {
           workspaceId,
           namePath,
           path: relativePath,
-          maxChars: maxChars.optional(),
+          maxChars,
         },
         (_context, input) =>
           provider.call("find_referencing_symbols", {
             name_path: input.namePath,
             relative_path: input.path,
-            max_answer_chars: input.maxChars ?? 50_000,
+            max_answer_chars: input.maxChars,
           }),
         (input) => input.workspaceId,
       ),
       defineTool(
         {
+          ...semanticMetadata,
           name: "code.implementations",
-          version: "1.0.0",
           title: "Find symbol implementations",
           description:
             "Find semantic implementations of one symbol identified by name path and contained source file.",
-          category: "code",
-          requiredCapabilities: semanticCapabilities(),
-          sideEffect: "process",
-          destructive: false,
-          permissionLevel: "observe",
-          approvalMode: "none",
-          inputSchema: objectSchema(
-            {
-              workspaceId: { type: "string", minLength: 1, maxLength: 128 },
-              namePath: { type: "string", minLength: 1, maxLength: 1_000 },
-              path: { type: "string", minLength: 1, maxLength: 4_096 },
-              includeInfo: { type: "boolean", default: false },
-              maxChars: {
-                type: "integer",
-                minimum: 1_024,
-                maximum: 100_000,
-                default: 50_000,
-              },
-            },
-            ["workspaceId", "namePath", "path"],
-          ),
         },
         {
           workspaceId,
           namePath,
           path: relativePath,
-          includeInfo: z.boolean().optional(),
-          maxChars: maxChars.optional(),
+          includeInfo: z.boolean().default(false),
+          maxChars,
         },
         (_context, input) =>
           provider.call("find_implementations", {
             name_path: input.namePath,
             relative_path: input.path,
-            include_info: input.includeInfo ?? false,
-            max_answer_chars: input.maxChars ?? 50_000,
+            include_info: input.includeInfo,
+            max_answer_chars: input.maxChars,
           }),
         (input) => input.workspaceId,
       ),
       defineTool(
         {
+          ...semanticMetadata,
           name: "code.definition",
-          version: "1.0.0",
           title: "Find declaration from usage",
           description:
             "Resolve a declaration from one bounded regex capture in a contained source file, optionally within a named containing symbol.",
-          category: "code",
-          requiredCapabilities: semanticCapabilities(),
-          sideEffect: "process",
-          destructive: false,
-          permissionLevel: "observe",
-          approvalMode: "none",
-          inputSchema: objectSchema(
-            {
-              workspaceId: { type: "string", minLength: 1, maxLength: 128 },
-              path: { type: "string", minLength: 1, maxLength: 4_096 },
-              regex: { type: "string", minLength: 3, maxLength: 1_000 },
-              containingSymbolNamePath: {
-                type: "string",
-                minLength: 1,
-                maxLength: 1_000,
-              },
-              includeBody: { type: "boolean", default: false },
-              includeInfo: { type: "boolean", default: false },
-            },
-            ["workspaceId", "path", "regex"],
-          ),
         },
         {
           workspaceId,
           path: relativePath,
           regex: z.string().min(3).max(1_000),
           containingSymbolNamePath: namePath.optional(),
-          includeBody: z.boolean().optional(),
-          includeInfo: z.boolean().optional(),
+          includeBody: z.boolean().default(false),
+          includeInfo: z.boolean().default(false),
         },
         (_context, input) =>
           provider.call("find_declaration", {
             relative_path: input.path,
             regex: input.regex,
             containing_symbol_name_path: input.containingSymbolNamePath ?? null,
-            include_body: input.includeBody ?? false,
-            include_info: input.includeInfo ?? false,
+            include_body: input.includeBody,
+            include_info: input.includeInfo,
           }),
         (input) => input.workspaceId,
       ),
       defineTool(
         {
+          ...semanticMetadata,
           name: "code.diagnostics",
-          version: "1.0.0",
           title: "File diagnostics",
           description:
             "Return bounded LSP diagnostics for one contained source file, grouped by severity and semantic symbol.",
-          category: "code",
-          requiredCapabilities: semanticCapabilities(),
-          sideEffect: "process",
-          destructive: false,
-          permissionLevel: "observe",
-          approvalMode: "none",
-          inputSchema: objectSchema(
-            {
-              workspaceId: { type: "string", minLength: 1, maxLength: 128 },
-              path: { type: "string", minLength: 1, maxLength: 4_096 },
-              startLine: {
-                type: "integer",
-                minimum: 0,
-                maximum: 1_000_000,
-                default: 0,
-              },
-              endLine: {
-                type: "integer",
-                minimum: -1,
-                maximum: 1_000_000,
-                default: -1,
-              },
-              minSeverity: {
-                type: "integer",
-                minimum: 1,
-                maximum: 4,
-                default: 4,
-              },
-              maxChars: {
-                type: "integer",
-                minimum: 1_024,
-                maximum: 100_000,
-                default: 50_000,
-              },
-            },
-            ["workspaceId", "path"],
-          ),
         },
         {
           workspaceId,
           path: relativePath,
-          startLine: z.number().int().min(0).max(1_000_000).optional(),
-          endLine: z.number().int().min(-1).max(1_000_000).optional(),
-          minSeverity: z.number().int().min(1).max(4).optional(),
-          maxChars: maxChars.optional(),
+          startLine: z.number().int().min(0).max(1_000_000).default(0),
+          endLine: z.number().int().min(-1).max(1_000_000).default(-1),
+          minSeverity: z.number().int().min(1).max(4).default(4),
+          maxChars,
         },
         (_context, input) =>
           provider.call("get_diagnostics_for_file", {
             relative_path: input.path,
-            start_line: input.startLine ?? 0,
-            end_line: input.endLine ?? -1,
-            min_severity: input.minSeverity ?? 4,
-            max_answer_chars: input.maxChars ?? 50_000,
+            start_line: input.startLine,
+            end_line: input.endLine,
+            min_severity: input.minSeverity,
+            max_answer_chars: input.maxChars,
           }),
         (input) => input.workspaceId,
       ),

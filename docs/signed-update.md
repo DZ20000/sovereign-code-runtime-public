@@ -1,26 +1,9 @@
-# Signed side-by-side update contract
+# Signed release verification and candidate preflight
 
-## Status
+The update-core package owns release manifests, signatures, immutable candidate materialization, isolated preflight, and renderer package verification. Its four implementation modules are manifest.ts, candidate-slot.ts, preflight.ts, and renderer.ts.
 
-This document defines Sovereign's future signed A/B update boundary. The current product does **not** automatically replace its installed or portable executable.
+The installed desktop owns activation, rollback, process supervision, and persistence in its Tauri implementation. See [Runtime Host candidates](runtime-candidate-updates.md), [renderer hot updates](renderer-hot-updates.md), and [application restarts](application-restart-updates.md) for those executable paths. The former unconnected TypeScript cutover, recovery, and supervisor prototypes have been removed.
 
-Implemented checkpoints are intentionally limited to:
-
-```text
-release-manifest validation
-Ed25519 public-key verification
-component/path/inventory verification
-schema/rollback compatibility checks
-pure deterministic update state machine
-cleanup retention planning
-immutable bootstrap state revisions with guarded compare-and-swap publication
-verified stream-to-slot candidate materialization with final ready-marker publication
-isolated packaged candidate preflight with bounded identity/process/UI evidence
-```
-
-The implemented packages persist reducer state, materialize an already supplied signed candidate into a new side-by-side slot, and can launch that verified slot only as an isolated packaged preflight. They do not download a release, parse an archive, activate a slot, roll back a live release, mutate the active bootstrap pointer, run a remote canary, or delete installed releases.
-
-Renderer-only bundle activation is implemented separately in the stable Tauri/Rust shell. It uses its own narrower manifest, immutable slots, custom protocol, hidden read-only preflight, and UI-readiness rollback without replacing executable components. See [`renderer-hot-updates.md`](renderer-hot-updates.md). That mechanism does not weaken or substitute for the full-release bootstrap boundary described below.
 ## Trust boundary
 
 The update signing private key must never exist:
@@ -36,70 +19,6 @@ The update signing private key must never exist:
 The target contains only a bounded registry of Ed25519 **public** keys. Every entry has a unique key ID, an allowed release-sequence interval, and an allowed channel set. Verification rejects PEM values containing private-key material, multiple keys, comments, or non-canonical SPKI content even if Node could otherwise derive a usable public key.
 
 A stable bootstrap/updater is outside all candidate release directories. A candidate cannot validate itself, choose its own trusted key, or make the final rollback decision.
-
-## Side-by-side slots
-
-```text
-updates/
-  bootstrap-state/
-    revision-0000000000000001.json
-    revision-0000000000000002.json
-    .bootstrap-update-state-<pid>-<uuid>.tmp
-  slots/
-    release-<id>/
-      .scr-update/
-        envelope.json
-        ready.json
-        .slot-ready-<pid>-<uuid>.tmp
-      SovereignCodeRuntime.exe
-      node/node.exe
-      runtime-host.cjs
-      host-guardian.mjs
-      runtime-manifest.json
-      native/bin/SovereignNativeAgent.exe
-```
-
-The live entry point must resolve through bootstrap-controlled state, not by overwriting the currently running executable.
-
-At all times retain:
-
-```text
-current active release
-last-known-good release
-candidate release while staged/preflight/canary is incomplete
-```
-
-Cleanup may remove only releases outside that retained set. It must never remove the sole verified rollback release.
-
-## Bootstrap state storage
-
-The implemented state-store schema is `scr.bootstrap-update-state/v1`. It uses immutable, contiguous revision files rather than overwriting one mutable JSON document.
-
-Each revision contains:
-
-```text
-storageRevision
-previousStateSha256
-strictly parsed scr.update-state/v1 payload
-```
-
-Publication is guarded as follows:
-
-1. require an absolute local state directory under an existing real parent;
-2. reject parent/state directories, revisions, or temporary entries that are symbolic links or junctions;
-3. read and validate the complete bounded revision chain from revision one;
-4. compare both the caller's expected storage revision and expected SHA-256 with the current head;
-5. write a unique same-directory temporary file with exclusive creation;
-6. flush the temporary file;
-7. publish the deterministic next revision by a no-overwrite hard link;
-8. best-effort flush the state directory and report whether that metadata flush was supported;
-9. re-read and verify the published revision before returning it.
-
-Two writers using one expected head can therefore publish only one deterministic next filename. The loser receives a conflict rather than overwriting the winner. A crash before publication leaves only an ignored, bounded temporary file. A crash after publication leaves a complete immutable revision even if temporary-file cleanup did not run.
-
-The store fails closed for gaps, broken SHA chains, malformed or oversized state, unexpected directory entries, excessive revision/temporary counts, stale compare-and-swap expectations, and release-state schema violations. It also bounds cumulative chain bytes so an attacker cannot force unbounded historical parsing.
-
-On platforms where opening and flushing a directory is unsupported, the write result reports `directorySyncCompleted: false`. Future stable native bootstrap integration must decide whether to block activation or provide an OS-native directory metadata flush; the current package does not silently claim that stronger durability.
 
 ## Release manifest
 
@@ -280,116 +199,12 @@ Cutover requires a bootstrap-owned lease and no consequential request or other u
 
 A canary pass commits the candidate as active while retaining the prior active release as last-known-good.
 
-## Crash recovery
+## Verification
 
-Bootstrap state is persisted before each externally visible effect. On startup:
-
-- interrupted `preflight` returns to active release and discards candidate;
-- interrupted `cutover` or `canary` activates last-known-good;
-- interrupted `rollback` continues activating last-known-good;
-- a rollback completion must identify the expected last-known-good release ID;
-- failure to activate last-known-good enters `needs-attention` with bounded redacted evidence;
-- an observed active slot inconsistent with persisted state fails closed to rollback/attention;
-- `idle` never silently trusts an unknown active slot.
-
-Candidate code does not decide this recovery path.
-
-## Pure state machine
-
-Lifecycle:
-
-```text
-idle
-staged
-preflight
-ready-to-cutover
-cutover
-canary
-rollback
-needs-attention
+```powershell
+pnpm exec tsc -b packages/update-core --pretty false
+pnpm exec vitest run packages/update-core/test/manifest.test.ts packages/update-core/test/candidate-slot.test.ts packages/update-core/test/preflight.test.ts packages/update-core/test/renderer.test.ts
+node apps/desktop-tauri/scripts/smoke-renderer-update-package.mjs
 ```
 
-Events are generation-bound and timestamped with process-monotonic time. Persisted timestamps are never compared across bootstrap processes: recovery first refreshes the local monotonic epoch or moves the interrupted lifecycle into discard/rollback before accepting ordinary events.
-
-Effects are declarative:
-
-```text
-launch isolated preflight
-discard candidate
-activate candidate
-start remote canary
-activate last-known-good
-commit candidate
-require attention
-ignore stale event
-hold
-```
-
-The reducer performs no filesystem, process, registry, network, DPAPI or signature operation.
-
-## Minimum deterministic tests
-
-```text
-unsigned envelope rejected
-unknown or duplicate signing key rejected
-private, multi-key, or non-canonical public-key PEM rejected
-disallowed signing-key channel rejected
-unknown signed fields rejected
-bad manifest digest rejected
-bad or non-canonical signature rejected
-path traversal rejected
-absolute/drive/UNC path rejected
-case-insensitive duplicate path rejected
-candidate component cannot resolve outside slot
-missing/extra/hash/size inventory mismatch rejected
-bootstrap incompatibility blocks candidate
-current data schema outside candidate readable range blocks candidate
-candidate write schema unreadable by last-known-good blocks cutover
-preflight timeout leaves current active and discards candidate
-late preflight/cutover/canary success is rejected
-candidate crash during canary activates last-known-good
-current and last-known-good retained throughout canary
-candidate release ID cannot collide with a retained slot
-late generation or phase-regressing event ignored
-interrupted cutover recovers to last-known-good
-rollback completion must identify last-known-good
-rollback activation failure enters needs-attention
-canary pass commits candidate but retains prior active as last-known-good
-cleanup keeps current + last-known-good + in-progress candidate
-release sequence downgrade rejected
-bootstrap state create/read round-trip
-stale state SHA/revision compare-and-swap rejected
-concurrent state writers publish only one next revision
-orphaned temporary state file leaves current revision readable
-revision gap, broken chain, malformed JSON, oversized chain, or unexpected entry rejected
-state directory, parent, or revision symlink/junction rejected
-interrupted reducer state is recovered and persisted as a new immutable revision
-reserved slot metadata path and file/directory component conflicts rejected
-source inventory mismatch rejected before slot creation
-untrusted envelope rejected before slot creation
-component length/hash/chunk/cancellation failure leaves no ready marker
-concurrent materializers create only one release slot
-exclusive-write conflict does not delete another writer's file
-ready slot reinspection detects envelope/component tampering and unexpected entries
-component symlink, junction, or external hard link rejected
-missing metadata or ready marker remains non-launchable
-directory durability capability is reported rather than assumed
-preflight report missing, oversized, multiply linked, malformed, or identity-mismatched is rejected
-preflight protocol/version/entrypoint mismatch is rejected
-preflight rejects live Tunnel ownership and a missing Host Guardian
-preflight timeout/cancellation kills the process tree and leaves no isolated artifacts
-packaged preflight proves shell + Runtime Host + loopback Gateway + UI + Host Guardian readiness
-```
-
-## Deferred process implementation
-
-After the implemented manifest, immutable state-store, slot materialization, and isolated packaged-preflight checkpoints pass all existing product gates:
-
-1. harden production launch/cutover with native no-reparse process handles and a stronger directory-durability primitive where required;
-2. add authenticated release acquisition and archive/source adapters outside the logical component-source boundary;
-3. add bootstrap-controlled cutover and rollback effect execution;
-4. add remote canary evidence;
-5. add release-slot and historical state-revision cleanup policy;
-6. add signed release creation in an external build environment.
-
-The signing tool and private key remain outside the target application repository/runtime boundary.
+The focused tests and package smoke use temporary fixtures. They do not activate a release or restart the installed desktop.

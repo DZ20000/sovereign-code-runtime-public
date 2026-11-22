@@ -131,10 +131,6 @@ function durationMs(startedAt: string | null, completedAt: string): number | nul
   return Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, end - start) : null;
 }
 
-function isTerminalState(state: RunState): boolean {
-  return !["queued", "running"].includes(state);
-}
-
 async function waitForSettled(
   promises: readonly Promise<unknown>[],
   timeoutMs: number,
@@ -323,19 +319,7 @@ export class ManagedRunManager {
       return current;
     }
 
-    let timer: NodeJS.Timeout | undefined;
-    try {
-      await Promise.race([
-        completion,
-        new Promise<void>((resolve) => {
-          timer = setTimeout(resolve, waitMs);
-        }),
-      ]);
-    } finally {
-      if (timer !== undefined) {
-        clearTimeout(timer);
-      }
-    }
+    await waitForSettled([completion], waitMs);
     return this.get(runId);
   }
 
@@ -373,19 +357,7 @@ export class ManagedRunManager {
       if (current === null || changed(current)) {
         return current;
       }
-      let timer: NodeJS.Timeout | undefined;
-      try {
-        await Promise.race([
-          change,
-          new Promise<void>((resolve) => {
-            timer = setTimeout(resolve, waitMs);
-          }),
-        ]);
-      } finally {
-        if (timer !== undefined) {
-          clearTimeout(timer);
-        }
-      }
+      await waitForSettled([change], waitMs);
       return this.get(runId);
     } finally {
       active.changeWaiters.delete(resolveChange);
@@ -512,8 +484,4 @@ export class ManagedRunManager {
     this.#active.delete(active.record.id);
     this.#queueCompletion(active.record, active.resolveCompletion);
   }
-}
-
-export function runIsActive(run: RunRecord): boolean {
-  return !isTerminalState(run.state);
 }

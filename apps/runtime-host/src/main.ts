@@ -37,6 +37,7 @@ import {
 import { RuntimeError } from "@sovereign/runtime-core";
 
 import { RuntimeCutoverGate, isRuntimeCutoverMethod } from "./cutover.js";
+import { consumeRegisteredConnectionOwnerOptions } from "./registered-connection-owner.js";
 
 interface PendingShellCall {
   readonly resolve: (value: unknown) => void;
@@ -540,6 +541,7 @@ const gatewayBearerToken =
   configuredGatewayBearerToken === undefined
     ? undefined
     : validateSessionSecret(configuredGatewayBearerToken);
+const registeredConnectionOwner = consumeRegisteredConnectionOwnerOptions(process.env);
 const parentPid = requiredParentPid();
 const channel = new HostProtocolChannel(sessionSecret);
 channel.start();
@@ -1089,6 +1091,7 @@ void (async () => {
       shell,
       approvalSurface,
       passiveCutoverCandidate: runtimeCutoverRole === "candidate",
+      ...registeredConnectionOwner,
       ...(gatewayBearerToken === undefined ? {} : { gatewayBearerToken }),
       onStateChanged: (state) => channel.event("state.changed", state),
     });

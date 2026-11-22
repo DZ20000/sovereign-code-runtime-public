@@ -1,6 +1,6 @@
 {
   "name": "@sovereign/desktop-tauri",
-  "version": "0.1.0",
+  "version": "0.1.6",
   "private": true,
   "type": "module",
   "description": "WebView2 desktop shell for Sovereign Code Runtime.",
@@ -17,6 +17,9 @@
     "make": "node scripts/build-installer.mjs",
     "package:portable": "pnpm build && node scripts/package-portable.mjs",
     "verify:portable": "node scripts/verify-portable-package.mjs",
+    "release:portable": "node scripts/build-portable-release.mjs",
+    "package:portable-zip": "node scripts/package-portable-zip.mjs",
+    "test:portable-release": "node --test scripts/portable-release.test.mjs",
     "start:portable": "node scripts/start-portable.mjs",
     "restart": "node scripts/restart-portable.mjs",
     "restart:dry-run": "node scripts/restart-portable.mjs --dry-run",
@@ -64,7 +67,7 @@
     "@tauri-apps/cli": "2.11.4",
     "@types/node": "^24.0.10",
     "typescript": "^5.9.2",
-    "vite": "^8.1.0"
+    "vite": "8.2.4"
   },
   "license": "Apache-2.0"
 }

@@ -373,23 +373,25 @@ export async function buildWorkspaceContext(
     );
   }
 
-  const resultFor = (page: {
-    readonly dirtyFiles: readonly WorkspaceContextDirtyFile[];
-    readonly dirtyFilesTruncated: boolean;
-    readonly matchingPaths: readonly string[];
-    readonly matches: readonly WorkspaceContextMatch[];
-    readonly fileIndex: number;
-    readonly lineIndex: number;
-    readonly pathChecked: boolean;
-    readonly scannedFileCount: number;
-  }): WorkspaceContextResult => {
-    const nextCursor = page.fileIndex < files.length
+  const page = {
+    fileIndex: cursor.fileIndex,
+    lineIndex: cursor.lineIndex,
+    pathChecked: cursor.pathChecked,
+    scannedFileCount: 0,
+    dirtyFiles: [] as WorkspaceContextDirtyFile[],
+    dirtyFilesTruncated: status.truncated || status.dirtyFiles.length > 0,
+    matchingPaths: [] as string[],
+    matches: [] as WorkspaceContextMatch[],
+  };
+  const resultFor = (changes: Partial<typeof page> = {}): WorkspaceContextResult => {
+    const state = { ...page, ...changes };
+    const nextCursor = state.fileIndex < files.length
       ? encodeCursor({
           schemaVersion: WORKSPACE_CONTEXT_CURSOR_SCHEMA_VERSION,
           fingerprint,
-          fileIndex: page.fileIndex,
-          lineIndex: page.lineIndex,
-          pathChecked: page.pathChecked,
+          fileIndex: state.fileIndex,
+          lineIndex: state.lineIndex,
+          pathChecked: state.pathChecked,
         })
       : null;
     return finalizeWorkspaceContext({
@@ -398,41 +400,27 @@ export async function buildWorkspaceContext(
       scopePath,
       query: query.length === 0 ? null : query,
       branch: status.branch,
-      dirtyFiles: page.dirtyFiles,
-      matchingPaths: page.matchingPaths,
-      matches: page.matches,
+      dirtyFiles: state.dirtyFiles,
+      matchingPaths: state.matchingPaths,
+      matches: state.matches,
       candidateFileCount: files.length,
-      scannedFileCount: page.scannedFileCount,
+      scannedFileCount: state.scannedFileCount,
       truncated:
         nextCursor !== null ||
         statusResult.outputTruncated ||
         filesResult.outputTruncated ||
-        page.dirtyFilesTruncated,
+        state.dirtyFilesTruncated,
       nextCursor,
       exclusions: [...EXCLUDED_DIRECTORIES],
       sourceTruncated: {
         gitStatus: statusResult.outputTruncated,
         gitFiles: filesResult.outputTruncated,
-        dirtyFiles: page.dirtyFilesTruncated,
+        dirtyFiles: state.dirtyFilesTruncated,
       },
     });
   };
 
-  const cursorPage = {
-    fileIndex: cursor.fileIndex,
-    lineIndex: cursor.lineIndex,
-    pathChecked: cursor.pathChecked,
-  };
-  let dirtyFiles: WorkspaceContextDirtyFile[] = [];
-  let dirtyFilesTruncated = status.truncated || status.dirtyFiles.length > 0;
-  const emptyPage = resultFor({
-    dirtyFiles,
-    dirtyFilesTruncated,
-    matchingPaths: [],
-    matches: [],
-    ...cursorPage,
-    scannedFileCount: 0,
-  });
+  const emptyPage = resultFor();
   if (emptyPage.returnedBytes > options.maxBytes) {
     throw new RuntimeError(
       "INVALID_INPUT",
@@ -444,138 +432,79 @@ export async function buildWorkspaceContext(
       },
     );
   }
-  for (let index = 0; index < status.dirtyFiles.length; index += 1) {
-    const candidateDirtyFiles = [...dirtyFiles, status.dirtyFiles[index]!];
-    const candidateTruncated = status.truncated || index + 1 < status.dirtyFiles.length;
-    const candidatePage = resultFor({
-      dirtyFiles: candidateDirtyFiles,
-      dirtyFilesTruncated: candidateTruncated,
-      matchingPaths: [],
-      matches: [],
-      ...cursorPage,
-      scannedFileCount: 0,
-    });
-    if (candidatePage.returnedBytes > options.maxBytes) {
-      break;
-    }
-    dirtyFiles = candidateDirtyFiles;
-    dirtyFilesTruncated = candidateTruncated;
+  for (const [index, dirtyFile] of status.dirtyFiles.entries()) {
+    const dirtyFiles = [...page.dirtyFiles, dirtyFile];
+    const dirtyFilesTruncated = status.truncated || index + 1 < status.dirtyFiles.length;
+    if (resultFor({ dirtyFiles, dirtyFilesTruncated }).returnedBytes > options.maxBytes) break;
+    Object.assign(page, { dirtyFiles, dirtyFilesTruncated });
   }
 
-  const matchingPaths: string[] = [];
-  const matches: WorkspaceContextMatch[] = [];
-  let fileIndex = cursor.fileIndex;
-  let lineIndex = cursor.lineIndex;
-  let pathChecked = cursor.pathChecked;
-  let scannedFileCount = 0;
-  let stopped = false;
-
-  const rejectOversizedItem = (
-    itemType: "path" | "match",
-    serializedBytes: number,
-    requiredBytes: number,
-  ): never => {
-    throw new RuntimeError(
-      "INVALID_INPUT",
-      `Workspace context ${itemType} cannot fit within maxBytes; increase maxBytes or narrow the request.`,
-      400,
-      {
-        itemType,
-        itemBytes: serializedBytes,
-        maxBytes: options.maxBytes,
-        requiredBytes,
-      },
-    );
-  };
-  type CandidatePage = Omit<Parameters<typeof resultFor>[0], "dirtyFiles" | "dirtyFilesTruncated">;
-  const fitCandidatePage = (page: CandidatePage): WorkspaceContextResult => {
-    let candidatePage = resultFor({ dirtyFiles, dirtyFilesTruncated, ...page });
-    while (candidatePage.returnedBytes > options.maxBytes && dirtyFiles.length > 0) {
-      dirtyFiles = dirtyFiles.slice(0, -1);
-      dirtyFilesTruncated = true;
-      candidatePage = resultFor({ dirtyFiles, dirtyFilesTruncated, ...page });
+  // Paths and text matches share one budget and advance only after being accepted.
+  const appendItem = (
+    item: string | WorkspaceContextMatch,
+    next: Pick<WorkspaceContextCursorPayload, "fileIndex" | "lineIndex" | "pathChecked">,
+  ): boolean => {
+    const isPath = typeof item === "string";
+    const addition = isPath
+      ? { matchingPaths: [...page.matchingPaths, item] }
+      : { matches: [...page.matches, item] };
+    let candidate = resultFor({ ...next, ...addition });
+    while (candidate.returnedBytes > options.maxBytes && page.dirtyFiles.length > 0) {
+      page.dirtyFiles.pop();
+      page.dirtyFilesTruncated = true;
+      candidate = resultFor({ ...next, ...addition });
     }
-    return candidatePage;
+    if (candidate.returnedBytes > options.maxBytes) {
+      const isolated = resultFor({
+        ...next,
+        dirtyFiles: [],
+        dirtyFilesTruncated: status.truncated || status.dirtyFiles.length > 0,
+        matchingPaths: isPath ? [item] : [],
+        matches: isPath ? [] : [item],
+        scannedFileCount: 1,
+      });
+      if (isolated.returnedBytes > options.maxBytes) {
+        const itemType = isPath ? "path" : "match";
+        throw new RuntimeError(
+          "INVALID_INPUT",
+          `Workspace context ${itemType} cannot fit within maxBytes; increase maxBytes or narrow the request.`,
+          400,
+          {
+            itemType,
+            itemBytes: itemBytes(item),
+            maxBytes: options.maxBytes,
+            requiredBytes: isolated.returnedBytes,
+          },
+        );
+      }
+      return false;
+    }
+    Object.assign(page, next, addition);
+    return true;
   };
 
-  while (
-    fileIndex < files.length &&
-    scannedFileCount < options.maxFiles &&
-    !stopped
-  ) {
-    const path = files[fileIndex]!;
-    scannedFileCount += 1;
+  scan: while (page.fileIndex < files.length && page.scannedFileCount < options.maxFiles) {
+    const path = files[page.fileIndex]!;
+    const nextFile = { fileIndex: page.fileIndex + 1, lineIndex: 0, pathChecked: false };
+    page.scannedFileCount += 1;
     if (query.length === 0) {
-      const nextFileIndex = fileIndex + 1;
-      const candidatePaths = [...matchingPaths, path];
-      const candidatePage = fitCandidatePage({
-        matchingPaths: candidatePaths,
-        matches,
-        fileIndex: nextFileIndex,
-        lineIndex: 0,
-        pathChecked: false,
-        scannedFileCount,
-      });
-      if (candidatePage.returnedBytes > options.maxBytes) {
-        const isolatedPage = resultFor({
-          dirtyFiles: [],
-          dirtyFilesTruncated: status.truncated || status.dirtyFiles.length > 0,
-          matchingPaths: [path],
-          matches: [],
-          fileIndex: nextFileIndex,
-          lineIndex: 0,
-          pathChecked: false,
-          scannedFileCount: 1,
-        });
-        if (isolatedPage.returnedBytes > options.maxBytes) {
-          rejectOversizedItem("path", itemBytes(path), isolatedPage.returnedBytes);
-        }
-        stopped = true;
-        break;
-      }
-      matchingPaths.push(path);
-      fileIndex = nextFileIndex;
-      lineIndex = 0;
-      pathChecked = false;
+      if (!appendItem(path, nextFile)) break;
       continue;
     }
 
-    if (!pathChecked) {
-      if (path.toLocaleLowerCase("en-US").includes(normalizedQuery)) {
-        const candidatePaths = [...matchingPaths, path];
-        const candidatePage = fitCandidatePage({
-          matchingPaths: candidatePaths,
-          matches,
-          fileIndex,
-          lineIndex,
+    if (!page.pathChecked) {
+      if (
+        path.toLocaleLowerCase("en-US").includes(normalizedQuery) &&
+        !appendItem(path, {
+          fileIndex: page.fileIndex,
+          lineIndex: page.lineIndex,
           pathChecked: true,
-          scannedFileCount,
-        });
-        if (candidatePage.returnedBytes > options.maxBytes) {
-          const isolatedPage = resultFor({
-            dirtyFiles: [],
-            dirtyFilesTruncated: status.truncated || status.dirtyFiles.length > 0,
-            matchingPaths: [path],
-            matches: [],
-            fileIndex,
-            lineIndex,
-            pathChecked: true,
-            scannedFileCount: 1,
-          });
-          if (isolatedPage.returnedBytes > options.maxBytes) {
-            rejectOversizedItem("path", itemBytes(path), isolatedPage.returnedBytes);
-          }
-          stopped = true;
-          break;
-        }
-        matchingPaths.push(path);
-      }
-      pathChecked = true;
+        })
+      ) break;
+      page.pathChecked = true;
     }
     if (!searchable(path)) {
-      fileIndex += 1;
-      lineIndex = 0;
-      pathChecked = false;
+      Object.assign(page, nextFile);
       continue;
     }
 
@@ -593,90 +522,38 @@ export async function buildWorkspaceContext(
           "PATH_NOT_FOUND",
         ].includes(error.code)
       ) {
-        fileIndex += 1;
-        lineIndex = 0;
-        pathChecked = false;
+        Object.assign(page, nextFile);
         continue;
       }
       throw error;
     }
     const lines = read.content.split(/\r?\n/u);
-    if (lineIndex > 0 && lineIndex >= lines.length) {
+    if (page.lineIndex > 0 && page.lineIndex >= lines.length) {
       throw new RuntimeError(
         "INVALID_INPUT",
         "Workspace context cursor line offset is outside the current file.",
         400,
       );
     }
-    while (lineIndex < lines.length) {
-      const line = lines[lineIndex] ?? "";
-      const column = line.toLocaleLowerCase("en-US").indexOf(normalizedQuery);
-      const nextLine = lineIndex + 1;
+    while (page.lineIndex < lines.length) {
+      const column = lines[page.lineIndex]!.toLocaleLowerCase("en-US").indexOf(normalizedQuery);
+      const nextLine = page.lineIndex + 1;
       if (column >= 0) {
-        const match = matchForLine(path, lines, lineIndex, column, options.snippetLines);
         const completesFile = nextLine >= lines.length;
-        const candidateMatches = [...matches, match];
-        const candidatePage = fitCandidatePage({
-          matchingPaths,
-          matches: candidateMatches,
-          fileIndex: completesFile ? fileIndex + 1 : fileIndex,
-          lineIndex: completesFile ? 0 : nextLine,
-          pathChecked: completesFile ? false : true,
-          scannedFileCount,
-        });
-        if (candidatePage.returnedBytes > options.maxBytes) {
-          const isolatedPage = resultFor({
-            dirtyFiles: [],
-            dirtyFilesTruncated: status.truncated || status.dirtyFiles.length > 0,
-            matchingPaths: [],
-            matches: [match],
-            fileIndex: completesFile ? fileIndex + 1 : fileIndex,
-            lineIndex: completesFile ? 0 : nextLine,
-            pathChecked: completesFile ? false : true,
-            scannedFileCount: 1,
-          });
-          if (isolatedPage.returnedBytes > options.maxBytes) {
-            rejectOversizedItem("match", itemBytes(match), isolatedPage.returnedBytes);
-          }
-          stopped = true;
-          break;
-        }
-        matches.push(match);
-        lineIndex = nextLine;
-        if (completesFile) {
-          fileIndex += 1;
-          lineIndex = 0;
-          pathChecked = false;
-          if (matches.length >= options.maxMatches) {
-            stopped = true;
-          }
-          break;
-        }
-        if (matches.length >= options.maxMatches) {
-          stopped = true;
-          break;
-        }
-        continue;
+        const next = completesFile
+          ? nextFile
+          : { fileIndex: page.fileIndex, lineIndex: nextLine, pathChecked: true };
+        const match = matchForLine(path, lines, page.lineIndex, column, options.snippetLines);
+        if (!appendItem(match, next) || page.matches.length >= options.maxMatches) break scan;
+        if (completesFile) break;
+      } else {
+        page.lineIndex = nextLine;
       }
-      lineIndex = nextLine;
     }
-    if (!stopped && lineIndex >= lines.length) {
-      fileIndex += 1;
-      lineIndex = 0;
-      pathChecked = false;
-    }
+    if (page.lineIndex >= lines.length) Object.assign(page, nextFile);
   }
 
-  const result = resultFor({
-    dirtyFiles,
-    dirtyFilesTruncated,
-    matchingPaths,
-    matches,
-    fileIndex,
-    lineIndex,
-    pathChecked,
-    scannedFileCount,
-  });
+  const result = resultFor();
   if (result.returnedBytes > options.maxBytes) {
     throw new RuntimeError(
       "INTERNAL_ERROR",

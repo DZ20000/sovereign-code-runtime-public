@@ -1722,17 +1722,21 @@ fn renderer_root(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| format!("Could not resolve renderer update storage: {error}"))
 }
 
-fn renderer_trust_path(app: &AppHandle) -> Result<PathBuf, String> {
-    if cfg!(debug_assertions) {
+fn renderer_trust_path(_app: &AppHandle) -> Result<PathBuf, String> {
+    #[cfg(debug_assertions)]
+    {
         if let Some(value) = std::env::var_os("SCR_RENDERER_TRUSTED_KEYS_PATH") {
             return Ok(PathBuf::from(value));
         }
         return Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(RENDERER_TRUST_RESOURCE));
     }
-    app.path()
-        .resource_dir()
-        .map(|path| path.join(RENDERER_TRUST_RESOURCE))
-        .map_err(|error| format!("Could not resolve renderer trust registry: {error}"))
+    #[cfg(not(debug_assertions))]
+    {
+        _app.path()
+            .resource_dir()
+            .map(|path| path.join(RENDERER_TRUST_RESOURCE))
+            .map_err(|error| format!("Could not resolve renderer trust registry: {error}"))
+    }
 }
 
 impl RendererUpdateManager {

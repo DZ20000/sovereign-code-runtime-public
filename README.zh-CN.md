@@ -1,10 +1,12 @@
 # Sovereign Code Runtime
 
+**Windows x64 Portable（预览版）：** [发布状态与下载](https://github.com/DZ20000/sovereign-code-runtime-public/releases/latest) · [安装与校验说明](docs/windows-portable.md)。
+
 **为短暂的 AI 会话保存可持续的本地工作。**
 
 [![Windows source checks](https://github.com/DZ20000/sovereign-code-runtime-public/actions/workflows/source-check.yml/badge.svg)](https://github.com/DZ20000/sovereign-code-runtime-public/actions/workflows/source-check.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-![Status: Source Preview](https://img.shields.io/badge/status-source%20preview-orange)
+![Status: Preview](https://img.shields.io/badge/status-preview-orange)
 
 AI 对话会断开、过期或被替换，但本地工作不应随之消失。
 
@@ -12,7 +14,7 @@ Sovereign 把 **Task、Agent 所有权、权限、消息、执行状态和证据
 
 **[English](README.md)** · **[运行连续性 Demo](#运行连续性-demo)** · **[架构](docs/architecture.md)** · **[安全说明](SECURITY.md)** · **[参与贡献](CONTRIBUTING.md)**
 
-> **源码预览。** 本仓库发布的是源码，不是已宣布的二进制发行版，也不是安装态验收证明。源码 CI 不等于原生桌面验收；完整依赖审计也可能因已记录的构建依赖问题保持失败。在敏感环境中使用前，请阅读[安全政策](SECURITY.md)、[威胁模型](docs/threat-model.md)、[依赖安全说明](docs/dependency-security.md)和[发布证据与边界](#发布证据与边界)。
+> **预览版。** 发布页同时列出 Windows x64 ZIP 和对应 SHA-256 文件后，该 Portable 版本才可下载。源码 CI 和隔离的打包冒烟测试不能证明软件已安装到你的电脑，也不能证明它在你的环境中的实际运行表现。已执行的检查和已知限制见[安全政策](SECURITY.md)、[威胁模型](docs/threat-model.md)、[依赖安全说明](docs/dependency-security.md)和[发布证据与边界](#发布证据与边界)。
 
 ChatGPT Web 是一种受支持的连接方式。**Sovereign Code Runtime 是独立开源项目，与 OpenAI 不存在隶属、背书或赞助关系。** OpenAI 与 ChatGPT 是其各自权利人的商标。
 
@@ -184,7 +186,7 @@ Secure Desktop、凭据、passkey、OTP、CAPTCHA 和 UAC 同意仍由人类处�
 
 仍需明确的边界：
 
-- 当前仓库仍以 source preview 呈现，而非已宣布的公共二进制发行；
+- Windows x64 Portable 仍处于预览阶段；具体可下载版本以发布页已附加的资产为准；
 - 完整应用重启尚不提供通用中断任务重放；
 - 尚无离线远程任务队列和 pre-login Windows Service；
 - 普通 Terminal 与 Python 不是 OS 隔离执行；

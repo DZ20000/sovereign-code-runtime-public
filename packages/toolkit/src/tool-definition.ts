@@ -30,7 +30,7 @@ export function objectSchema(
 }
 
 export function defineTool<TShape extends z.ZodRawShape>(
-  spec: ToolSpec,
+  spec: Omit<ToolSpec, "inputSchema"> & { readonly inputSchema?: ToolSpec["inputSchema"] },
   inputShape: TShape,
   execute: (
     context: ToolExecutionContext,
@@ -40,7 +40,10 @@ export function defineTool<TShape extends z.ZodRawShape>(
 ): RuntimeToolDefinition {
   const schema = z.object(inputShape).strict();
   return {
-    spec,
+    spec: {
+      ...spec,
+      inputSchema: spec.inputSchema ?? z.toJSONSchema(schema, { io: "input" }),
+    },
     inputShape,
     parse(input): Record<string, unknown> {
       return schema.parse(input) as Record<string, unknown>;

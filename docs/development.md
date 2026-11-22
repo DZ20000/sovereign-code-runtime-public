@@ -22,7 +22,7 @@ pnpm audit --prod
 pnpm audit
 ```
 
-The preparation step compiles native helper resources and bundles the Runtime Host inside this checkout; it does not install them or activate a running SO instance. Source tests can start their own temporary subprocesses and loopback listeners. Skipped native tests are not passing native acceptance. The [Windows workflow](../.github/workflows/source-check.yml) uses Node 24.13.0 and pnpm 10.15.1 on a hosted runner with read-only repository permissions, no retained checkout credential, no publishing, and a separate full-audit gate that fails on unresolved advisories. Defining the workflow is not evidence that a hosted run has executed. Review [dependency security](dependency-security.md) before interpreting its result.
+The preparation step compiles native helper resources and bundles the Runtime Host inside this checkout; it does not install them or activate a running SO instance. Source tests can start their own temporary subprocesses and loopback listeners. Skipped native tests are not passing native acceptance. The [Windows workflow](../.github/workflows/source-check.yml) uses Node 24.22.1 and pnpm 10.15.1 on a hosted runner with read-only repository permissions, no retained checkout credential, no publishing, and a separate full-audit gate that fails on unresolved advisories. Defining the workflow is not evidence that a hosted run has executed. Review [dependency security](dependency-security.md) before interpreting its result.
 
 ## Source development
 
@@ -98,7 +98,7 @@ To deliberately switch to this checkout's recorded portable build, use `pnpm res
 
 `pnpm install:restart-shortcut` installs searchable Desktop and Start Menu shortcuts for the ordinary restart that keeps the current version. The repository-root `restart-sovereign.cmd` provides the same action. A portable folder registered for login startup must remain at its registered path. An NSIS-installed application is independent of development `artifacts/portable-*` directories.
 
-These commands stop running work; they do not provide task checkpoint/resume or transactional rollback. The [application restart transaction library](application-restart-updates.md) is not connected to the desktop restart command. A process remaining alive after launch is not proof of Tunnel or remote-session readiness.
+These commands stop running work; they do not provide task checkpoint/resume or transactional rollback. Use the [application restart guide](application-restart-updates.md) for the supported launcher and installer path. A process remaining alive after launch is not proof of Tunnel or remote-session readiness.
 
 A full restart, Renderer activation, and Runtime Host cutover are different transactions. Use [application restart](application-restart-updates.md), [renderer hot updates](renderer-hot-updates.md), or [Runtime Host candidate updates](runtime-candidate-updates.md) for the component being changed. Coordinate running-task disruption and preserve the required release evidence; do not restart the user's application merely to validate documentation or a package file.
 

@@ -35,7 +35,7 @@ describe("embedded Gateway runtime", () => {
     });
 
     try {
-      expect(runtime.manifest.runtimeVersion).toBe("0.1.5");
+      expect(runtime.manifest.runtimeVersion).toBe("0.1.6");
       expect(runtime.host).toBe("127.0.0.1");
       expect(runtime.port).toBeGreaterThan(0);
       expect(runtime.endpoint).toBe(`http://127.0.0.1:${runtime.port}/mcp`);
@@ -78,7 +78,7 @@ describe("embedded Gateway runtime", () => {
       expect(manifest.status).toBe(200);
       await expect(manifest.json()).resolves.toMatchObject({
         schemaVersion: "scr.tools/v1",
-        runtimeVersion: "0.1.5",
+        runtimeVersion: "0.1.6",
         digest: runtime.manifest.digest,
       });
 
@@ -226,7 +226,7 @@ describe("embedded Gateway runtime", () => {
         result: {
           serverInfo: {
             name: "sovereign-code-runtime",
-            version: "0.1.5",
+            version: "0.1.6",
           },
         },
       });
