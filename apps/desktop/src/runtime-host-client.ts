@@ -20,7 +20,11 @@ import {
   type ControlProtocolMessage,
   type ControlRequestMethod,
   type DesktopAuditReceipt,
+  type DesktopPendingApproval,
+  type DesktopApprovalOpenResult,
   type DesktopDirectToolName,
+  type DesktopGeminiConnectionConfigurationInput,
+  type DesktopGeminiConnectionStatus,
   type DesktopManifestView,
   type DesktopPermissionProfile,
   type DesktopProjectWorkspaces,
@@ -255,6 +259,22 @@ export class RuntimeHostClient {
     };
   }
 
+  async getGeminiConnection(): Promise<DesktopGeminiConnectionStatus> {
+    return await this.#call("gemini.connection.read", {}) as DesktopGeminiConnectionStatus;
+  }
+
+  async configureGeminiConnection(input: DesktopGeminiConnectionConfigurationInput): Promise<DesktopGeminiConnectionStatus> {
+    return await this.#call("gemini.connection.configure", { input }) as DesktopGeminiConnectionStatus;
+  }
+
+  async startGeminiConnection(): Promise<DesktopGeminiConnectionStatus> {
+    return await this.#call("gemini.connection.start", {}) as DesktopGeminiConnectionStatus;
+  }
+
+  async stopGeminiConnection(): Promise<DesktopGeminiConnectionStatus> {
+    return await this.#call("gemini.connection.stop", {}) as DesktopGeminiConnectionStatus;
+  }
+
   async rotateCredentials(): Promise<DesktopRuntimeState> {
     return asRuntimeState(await this.#call("credential.rotate", {}));
   }
@@ -356,6 +376,20 @@ export class RuntimeHostClient {
     input: Readonly<Record<string, unknown>>,
   ): Promise<unknown> {
     return await this.#call("tool.invoke", { toolName, input });
+  }
+
+  async approvals(): Promise<readonly DesktopPendingApproval[]> {
+    const result = await this.#call("approvals.list", {});
+    if (!Array.isArray(result)) throw new Error("Runtime host returned an invalid approval list.");
+    return result as readonly DesktopPendingApproval[];
+  }
+
+  async openApproval(requestId: string): Promise<DesktopApprovalOpenResult> {
+    const result = await this.#call("approvals.open", { requestId });
+    if (result !== "opened" && result !== "queued" && result !== "unavailable") {
+      throw new Error("Runtime host returned an invalid approval focus result.");
+    }
+    return result;
   }
 
   async auditReceipts(limit: number): Promise<readonly DesktopAuditReceipt[]> {
@@ -603,6 +637,11 @@ export class RuntimeHostClient {
           cancelId: record.cancelId,
         };
         return await this.#options.shell.prompt(prompt);
+      }
+      case "approval.focus": {
+        const record = requiredRecord(params, "Approval focus");
+        if (typeof record.requestId !== "string") throw new Error("Approval request id is invalid.");
+        return await this.#options.approvalSurface.focus?.(record.requestId) ?? false;
       }
       case "approval.present": {
         const record = requiredRecord(params, "Approval presentation");

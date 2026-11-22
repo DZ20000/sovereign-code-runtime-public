@@ -5,7 +5,11 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type {
   DesktopAuditReceipt,
+  DesktopPendingApproval,
+  DesktopApprovalOpenResult,
   DesktopConnectionCopyResult,
+  DesktopGeminiConnectionConfigurationInput,
+  DesktopGeminiConnectionStatus,
   DesktopDirectToolName,
   DesktopHostStartupState,
   DesktopManifestView,
@@ -88,6 +92,15 @@ export function createTauriSovereignApi(): SovereignDesktopApi {
     stop: () => control<DesktopRuntimeState>("runtime.stop"),
     refresh: () => control<DesktopRuntimeState>("state.get"),
     getManifest: () => control<DesktopManifestView | null>("manifest.get"),
+    getApprovals: () => control<readonly DesktopPendingApproval[]>("approvals.list"),
+    openApproval: (requestId) => control<DesktopApprovalOpenResult>("approvals.open", { requestId }),
+    onApprovalCenterRequested: (listener) => {
+      let disposed = false;
+      let unlisten: (() => void) | null = null;
+      void listen("approval-center-requested", () => { if (!disposed) listener(); })
+        .then((stop) => { if (disposed) stop(); else unlisten = stop; });
+      return () => { disposed = true; unlisten?.(); };
+    },
     getAuditReceipts: (limit = 100) =>
       control<readonly DesktopAuditReceipt[]>("audit.list", { limit }),
     getResourceSnapshot: () =>
@@ -125,6 +138,11 @@ export function createTauriSovereignApi(): SovereignDesktopApi {
     ) => control<T>("tool.invoke", { toolName, input }),
     copyConnectionBundle: () =>
       invoke<DesktopConnectionCopyResult>("copy_connection_bundle"),
+    getGeminiConnection: () => control<DesktopGeminiConnectionStatus>("gemini.connection.read"),
+    configureGeminiConnection: (input: DesktopGeminiConnectionConfigurationInput) =>
+      control<DesktopGeminiConnectionStatus>("gemini.connection.configure", { input }),
+    startGeminiConnection: () => control<DesktopGeminiConnectionStatus>("gemini.connection.start"),
+    stopGeminiConnection: () => control<DesktopGeminiConnectionStatus>("gemini.connection.stop"),
     rotateCredentials: () => control<DesktopRuntimeState>("credential.rotate"),
     setAutoStart: (enabled: boolean) =>
       control<DesktopRuntimeState>("settings.auto-start", { enabled }),

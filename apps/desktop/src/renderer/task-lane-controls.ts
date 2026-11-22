@@ -82,6 +82,8 @@ export class TaskLaneControls {
         const nextButton = this.#buttons[nextIndex];
         if (nextButton === undefined) return;
         event.preventDefault();
+        const disclosure = nextButton.closest("details");
+        if (disclosure) disclosure.open = true;
         nextButton.focus();
         this.#activate(nextButton);
       });
@@ -109,6 +111,8 @@ export class TaskLaneControls {
       button.setAttribute("aria-pressed", String(selected));
       button.classList.toggle("is-selected", selected);
       button.tabIndex = selected ? 0 : -1;
+      const disclosure = button.closest("details");
+      if (selected && disclosure) disclosure.open = true;
     }
   }
 }

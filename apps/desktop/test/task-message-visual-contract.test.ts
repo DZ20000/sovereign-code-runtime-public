@@ -10,11 +10,11 @@ describe("task message visual contract", () => {
         "desktop",
         "src",
         "renderer",
-        "task-hub.css",
+        "v2.css",
       ),
       "utf8",
     );
-    const rule = styles.match(/\.task-message-content\s*\{[^}]+\}/u)?.[0];
+    const rule = styles.match(/\.task-message-content[^{}]*\{[^}]+\}/u)?.[0];
     expect(rule).toBeDefined();
     expect(rule).toContain("white-space: pre-wrap");
     expect(rule).toContain("overflow-wrap: anywhere");

@@ -1,56 +1,33 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
-
 import { describe, expect, it } from "vitest";
+const root = resolve(process.cwd(), "apps/desktop/src/renderer");
+const source = (name: string) => readFileSync(resolve(root, name), "utf8");
 
-function source(...parts: string[]): string {
-  return readFileSync(resolve(process.cwd(), ...parts), "utf8");
-}
-
-describe("desktop UI foundation", () => {
-  it("defines one shared token layer and keeps legacy surfaces mapped to it", () => {
-    const styles = source("apps", "desktop", "src", "renderer", "styles.css");
-    expect(styles.match(/\/\* sovereign-ui-foundation-v2 \*\//gu)).toHaveLength(1);
-    for (const token of [
-      "--ui-bg-canvas",
-      "--ui-bg-sidebar",
-      "--ui-bg-surface",
-      "--ui-border-subtle",
-      "--ui-text-primary",
-      "--ui-text-secondary",
-      "--ui-accent",
-      "--ui-control-height",
-      "--ui-content-gutter",
-    ]) {
-      expect(styles).toContain(token);
-    }
-    expect(styles).toContain("--bg: var(--ui-bg-canvas)");
-    expect(styles).toContain("--surface: var(--ui-bg-surface)");
-    expect(styles).toContain("--text: var(--ui-text-primary)");
-    expect(styles).toContain("Segoe UI Variable Text");
-    expect(styles).toMatch(/:where\(button, input, select, textarea, \[tabindex\]\):focus-visible/u);
+describe("v2 layout foundation", () => {
+  it("has four core routes and one folded developer group", () => {
+    const registry = source("view-registry.ts");
+    expect([...registry.matchAll(/id: "([^"]+)"[^\n]+navigationSection: "primary"/gu)].map(match => match[1])).toEqual(["overview", "tasks", "approvals", "settings"]);
+    const shell = source("shell.ts");
+    expect(shell).toContain('id="execute-group-toggle"');
+    expect(shell).toContain('aria-expanded="false"');
+    expect(shell).toContain('id="execute-group" class="navigation-group-items" hidden');
+    expect(shell).not.toContain("statusbar");
   });
-
-  it("uses a restrained desktop shell with a single navigation selection treatment", () => {
-    const shell = source("apps", "desktop", "src", "renderer", "product-shell.css");
-    expect(shell.match(/\/\* sovereign-app-shell-v2 \*\//gu)).toHaveLength(1);
-    expect(shell).toContain("width: 232px");
-    expect(shell).toContain("min-height: 64px");
-    expect(shell).toContain("width: min(100%, 1480px)");
-    expect(shell).toContain("background: rgba(127, 159, 242, .1)");
-    expect(shell).toContain("background: var(--ui-accent)");
-    expect(shell).not.toContain("box-shadow: 0 0 30px");
+  it("uses bounded widths, single-line navigation and one compact Overview", () => {
+    const styles = source("v2.css");
+    expect(source("tokens.css")).toContain("--ui-sidebar-width: 232px");
+    expect(styles).toMatch(/\.navigation-label\s*\{[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/u);
+    expect(styles).toMatch(/\.v2-drawer-heading h2\s*\{[^}]*white-space:\s*nowrap[^}]*text-overflow:\s*ellipsis/u);
+    expect(styles).toContain('data-experience-mode="simple"');
+    expect(source("view-overview.ts")).not.toContain("simple-overview");
   });
-
-  it("aligns overview and task surfaces without introducing a second card system", () => {
-    const workbench = source("apps", "desktop", "src", "renderer", "workbench.css");
-    const tasks = ["task-hub.css", "task-board.css"]
-      .map((file) => source("apps", "desktop", "src", "renderer", file))
-      .join("\n");
-    expect(workbench.match(/\/\* sovereign-overview-v2 \*\//gu)).toHaveLength(1);
-    expect(workbench).toContain("#view-overview");
-    expect(workbench).toContain("background: var(--ui-bg-surface)");
-    expect(tasks).toContain("background: var(--ui-surface)");
-    expect(tasks).not.toMatch(/--task-(?:surface|card)\s*:/u);
+  it("gives dark primary and secondary actions separate contrast treatments", () => {
+    const tokens = source("tokens.css");
+    expect(tokens).toContain('--color-accent: #b0bdff');
+    expect(tokens).toContain('--color-on-accent: #171e3b');
+    const styles = source("v2.css");
+    expect(styles).toMatch(/\.button-primary\s*\{[^}]*color: var\(--color-on-accent\)[^}]*background: var\(--color-accent\)/u);
+    expect(styles).toMatch(/\.button-secondary\s*\{[^}]*background: var\(--color-hover\)[^}]*border-color:/u);
   });
 });

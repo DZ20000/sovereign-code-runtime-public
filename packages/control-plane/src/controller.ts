@@ -4,9 +4,11 @@ import { join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 
 import {
-  serializeConnectionBundle,
+  type DesktopGeminiConnectionConfigurationInput,
   type DesktopActiveToolActivity,
   type DesktopAuditReceipt,
+  type DesktopApprovalOpenResult,
+  type DesktopPendingApproval,
   type DesktopControlPlaneRouteId,
   type DesktopControlPlaneRoutingState,
   type DesktopDirectToolName,
@@ -39,9 +41,9 @@ import {
   RUNTIME_BUILD_SOURCE,
   RuntimeError,
   type RuntimePermissionProfile,
-  type ToolSpec,
 } from "@sovereign/runtime-core";
 
+import { externalApprovalPresentation } from "./external-approval-presentation.js";
 import {
   ApprovalBroker,
   type ApprovalCancellationReason,
@@ -83,6 +85,14 @@ import {
   normalizeTaskBoundToolInput,
   touchTaskSessionForToolActivity,
 } from "./task-gateway-integration.js";
+import { GeminiConnectionManager } from "./gemini-connection.js";
+import {
+  desktopConnectionBundle,
+  localGatewayConnection,
+  normalizeGatewayBearerToken,
+  type ControlPlaneConnectionBundle,
+} from "./gateway-connection.js";
+export type { ControlPlaneConnectionBundle } from "./gateway-connection.js";
 import { defaultTaskDatabasePath, TaskRegistry } from "./task-registry.js";
 import { CredentialReferenceStore } from "./credential-references.js";
 import {
@@ -179,12 +189,6 @@ export interface ControlPlaneControllerOptions {
   ) => Promise<void>;
 }
 
-export interface ControlPlaneConnectionBundle {
-  readonly endpoint: string;
-  readonly target: "local" | "web-bridge";
-  readonly serialized: string;
-}
-
 export interface ControlPlaneOwnedProcess {
   readonly processId: number;
   readonly role: Extract<
@@ -202,39 +206,6 @@ function messageFrom(error: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function boundedJson(value: unknown, maxCharacters = 2_000): string {
-  let serialized: string;
-  try {
-    serialized = JSON.stringify(value, null, 2);
-  } catch {
-    serialized = String(value);
-  }
-  return serialized.length <= maxCharacters
-    ? serialized
-    : `${serialized.slice(0, Math.max(0, maxCharacters - 1))}…`;
-}
-
-function permissionLabel(spec: ToolSpec): string {
-  switch (spec.permissionLevel) {
-    case "observe":
-      return "L1 Observe";
-    case "workspace":
-      return "L2 Workspace";
-    case "consequential":
-      return "L3 Consequential";
-  }
-}
-
-function normalizeGatewayBearerToken(value: string): string {
-  const normalized = value.trim();
-  if (!/^[A-Za-z0-9_-]{43}$/u.test(normalized)) {
-    throw new Error(
-      "Gateway bearer token must be canonical 256-bit base64url.",
-    );
-  }
-  return normalized;
 }
 
 const MAX_ACTIVE_TOOL_ACTIVITIES = 128;
@@ -284,6 +255,7 @@ export class ControlPlaneController {
   readonly #onStateChanged: ((state: DesktopRuntimeState) => void) | undefined;
   readonly #controlPlaneFailoverPolicyOverrides: ControlPlaneFailoverPolicyOverrides;
   readonly #secureTunnel: SecureMcpTunnelController;
+  readonly #gemini: GeminiConnectionManager;
   readonly #externalApprovalBroker: ApprovalBroker;
   readonly #taskRegistry: TaskRegistry;
   readonly #projectWorkspaces: ProjectWorkspaces;
@@ -333,6 +305,16 @@ export class ControlPlaneController {
   constructor(options: ControlPlaneControllerOptions) {
     this.#passiveCutoverCandidate = options.passiveCutoverCandidate === true;
     this.#onAuthoritativeGatewayConnection = options.onAuthoritativeGatewayConnection;
+    this.#gemini = new GeminiConnectionManager({
+      userDataPath: options.userDataPath,
+      shell: options.shell,
+      isAuthoritative: () => !this.#passiveCutoverCandidate && this.#cutoverDetachedCheckpointId === null,
+      localConnection: () => localGatewayConnection(
+        this.#phase === "running" ? this.#runtime?.endpoint ?? null : null, this.#bearerToken,
+      ),
+      // The host installs this callback only after consuming its formal product-owner grant.
+      allowAutomaticRestore: options.onAuthoritativeGatewayConnection !== undefined,
+    });
     this.#gatewayBearerToken =
       options.gatewayBearerToken === undefined
         ? null
@@ -1493,6 +1475,7 @@ export class ControlPlaneController {
   }
 
   stop(): Promise<DesktopRuntimeState> {
+    this.#gemini.cancelPendingOperations();
     if (this.#routingEnabled()) {
       this.#routeDesiredRunning = false;
       this.#cancelRouteLaunchTimer();
@@ -1566,21 +1549,27 @@ export class ControlPlaneController {
   }
 
   connectionBundle(): ControlPlaneConnectionBundle {
-    const runtime = this.#runtime;
-    const bearerToken = this.#bearerToken;
-    if (runtime === null || bearerToken === null) {
-      throw new Error(
-        "Start the local Gateway before copying its connection bundle.",
-      );
-    }
-    const endpoint = this.#settings.webBridgeUrl ?? runtime.endpoint;
-    const target =
-      this.#settings.webBridgeUrl === null ? "local" : "web-bridge";
-    return {
-      endpoint,
-      target,
-      serialized: serializeConnectionBundle(endpoint, bearerToken),
-    };
+    return desktopConnectionBundle(
+      this.#runtime?.endpoint ?? null,
+      this.#bearerToken,
+      this.#settings.webBridgeUrl,
+    );
+  }
+
+  getGeminiConnection() {
+    return this.#gemini.read();
+  }
+
+  configureGeminiConnection(input: DesktopGeminiConnectionConfigurationInput) {
+    return this.#gemini.configure(input);
+  }
+
+  startGeminiConnection() {
+    return this.#gemini.start();
+  }
+
+  stopGeminiConnection() {
+    return this.#gemini.stop();
   }
 
   rotateCredentials(): Promise<DesktopRuntimeState> {
@@ -2162,6 +2151,14 @@ export class ControlPlaneController {
     return await runtime.invokeTool(toolName, normalized, workspaceId);
   }
 
+  approvals(): readonly DesktopPendingApproval[] {
+    return this.#externalApprovalBroker.snapshot();
+  }
+
+  async openApproval(requestId: string): Promise<DesktopApprovalOpenResult> {
+    return await this.#externalApprovalBroker.open(requestId);
+  }
+
   auditReceipts(limit: number): readonly DesktopAuditReceipt[] {
     const receipts = this.#runtime?.listAuditReceipts(limit) ?? [];
     return receipts.map((receipt) => ({
@@ -2222,6 +2219,7 @@ export class ControlPlaneController {
   }
 
   async shutdown(): Promise<void> {
+    this.#gemini.cancelPendingOperations();
     if (this.#routingEnabled()) {
       this.#routeDesiredRunning = false;
       this.#cancelRouteLaunchTimer();
@@ -2229,6 +2227,7 @@ export class ControlPlaneController {
     await this.#enqueue(async () => {
       await this.#stopNow();
       await this.#secureTunnel.shutdown();
+      await this.#gemini.shutdown();
       this.#taskRegistry.close();
     });
   }
@@ -2373,13 +2372,7 @@ export class ControlPlaneController {
     if (this.#permissionProfile !== "consequential") {
       return false;
     }
-    const spec = request.spec;
-    const decision = await this.#externalApprovalBroker.request({
-      toolName: spec.name,
-      title: `${permissionLabel(spec)} · ChatGPT Web`,
-      message: `Allow connected web agent to run ${spec.name}?`,
-      detail: `${spec.description}\n\nThis approval covers exactly this external tool call and expires after 30 seconds.\n\n${boundedJson(request.input)}`,
-    });
+    const decision = await this.#externalApprovalBroker.request(externalApprovalPresentation(request));
     if (decision === "drop-to-l1") {
       await this.setPermissionProfile("observe");
       return false;
@@ -2453,6 +2446,7 @@ export class ControlPlaneController {
     }
 
     const externalRouteDesired = this.externalRouteDesiredForCutover();
+    await this.#gemini.suspend();
     if (this.#routingEnabled()) {
       await this.#stopControlPlaneRouting(
         "Runtime Host traffic is moving to a verified candidate.",
@@ -2610,13 +2604,14 @@ export class ControlPlaneController {
     ) {
       return;
     }
-    try {
-      await this.#onAuthoritativeGatewayConnection(
-        this.#runtime.endpoint, this.#bearerToken,
-      );
-    } catch {
-      console.warn("The existing Gemini local pairing could not follow the current Gateway connection.");
-    }
+    const endpoint = this.#runtime.endpoint;
+    const bearerToken = this.#bearerToken;
+    await Promise.all([
+      this.#gemini.restore(),
+      Promise.resolve().then(() => this.#onAuthoritativeGatewayConnection!(endpoint, bearerToken)).catch(() => {
+        console.warn("The existing Gemini local pairing could not follow the current Gateway connection.");
+      }),
+    ]);
   }
 
   async #startNow(publishConnection = true): Promise<void> {
@@ -2710,6 +2705,8 @@ export class ControlPlaneController {
   }
 
   async #stopNow(): Promise<void> {
+    if (this.#runtime !== null) this.#phase = "stopping";
+    await this.#gemini.suspend();
     this.#externalApprovalBroker.cancelAll("runtime-stop");
     this.#directWorkspaceApprovals.clear();
     this.#activityTaskIds.clear();

@@ -27,10 +27,14 @@ import {
 import { ApprovalWindowController } from "./approval-window.js";
 import { RuntimeHostClient } from "./runtime-host-client.js";
 import { registerTaskIpc } from "./task-ipc.js";
+import { registerGeminiConnectionIpc } from "./gemini-connection-ipc.js";
+import { registerApprovalCenterIpc } from "./approval-center-ipc.js";
 import {
   IPC_CHANNELS,
   type DesktopAuditReceipt,
   type DesktopConnectionCopyResult,
+  type DesktopGeminiConnectionConfigurationInput,
+  type DesktopGeminiConnectionStatus,
   type DesktopDirectToolName,
   type DesktopHostStartupState,
   type DesktopManifestView,
@@ -199,36 +203,21 @@ function unavailableHostAvailability(): DesktopHostStartupState["availability"] 
 
 function electronHostStartupState(): DesktopHostStartupState {
   const executablePath = process.execPath;
-  if (process.platform !== "win32") {
-    return {
-      schemaVersion: "scr.host-startup/v1",
-      supported: false,
-      enabled: false,
-      executablePath,
-      launchKind: "legacy-electron",
-      registeredCommand: null,
-      warning: "Windows login startup is only available on Windows.",
-      guardian: {
-        available: false,
-        processId: null,
-        closeToTray: false,
-        circuitOpen: false,
-        lastIncident: null,
-      },
-      availability: unavailableHostAvailability(),
-    };
-  }
-  const args = ["--autostart"];
-  const settings = app.getLoginItemSettings({ path: executablePath, args });
-  const enabled = settings.openAtLogin && settings.executableWillLaunchAtLogin;
+  const supported = process.platform === "win32";
+  const settings = supported
+    ? app.getLoginItemSettings({ path: executablePath, args: ["--autostart"] })
+    : null;
+  const enabled = settings !== null && settings.openAtLogin && settings.executableWillLaunchAtLogin;
   return {
     schemaVersion: "scr.host-startup/v1",
-    supported: true,
+    supported,
     enabled,
     executablePath,
     launchKind: "legacy-electron",
     registeredCommand: enabled ? `"${executablePath}" --autostart` : null,
-    warning: "This setting belongs to the legacy Electron shell. Prefer the primary Tauri build for deployment.",
+    warning: supported
+      ? "This setting belongs to the legacy Electron shell. Prefer the primary Tauri build for deployment."
+      : "Windows login startup is only available on Windows.",
     guardian: {
       available: false,
       processId: null,
@@ -541,6 +530,22 @@ class DesktopRuntimeController {
   chooseProjectWorkspace(projectId: string): Promise<DesktopProjectWorkspaces> { return this.#runtimeHost.chooseProjectWorkspace(projectId); }
   selectProjectWorkspace(projectId: string, workspaceId: string): Promise<DesktopProjectWorkspaces> { return this.#runtimeHost.selectProjectWorkspace(projectId, workspaceId); }
 
+  getGeminiConnection(): Promise<DesktopGeminiConnectionStatus> {
+    return this.#runtimeHost.getGeminiConnection();
+  }
+
+  configureGeminiConnection(input: DesktopGeminiConnectionConfigurationInput): Promise<DesktopGeminiConnectionStatus> {
+    return this.#runtimeHost.configureGeminiConnection(input);
+  }
+
+  startGeminiConnection(): Promise<DesktopGeminiConnectionStatus> {
+    return this.#runtimeHost.startGeminiConnection();
+  }
+
+  stopGeminiConnection(): Promise<DesktopGeminiConnectionStatus> {
+    return this.#runtimeHost.stopGeminiConnection();
+  }
+
   async copyConnectionBundle(): Promise<DesktopConnectionCopyResult> {
     const bundle = await this.#runtimeHost.connectionBundle();
     const copiedAt = new Date();
@@ -746,6 +751,14 @@ class DesktopRuntimeController {
     input: Readonly<Record<string, unknown>>,
   ): Promise<unknown> {
     return await this.#runtimeHost.invokeTool(toolName, input);
+  }
+
+  approvals() { return this.#runtimeHost.approvals(); }
+
+  openApproval(requestId: string) { return this.#runtimeHost.openApproval(requestId); }
+
+  dismissApproval(event: IpcMainInvokeEvent, returnToCenter: unknown): void {
+    this.#approvalWindow.dismiss(event, returnToCenter);
   }
 
   approvalCurrent(event: IpcMainInvokeEvent) {
@@ -1007,6 +1020,8 @@ function registerIpc(controller: DesktopRuntimeController): void {
     return await controller.cancelRun(runId);
   });
   registerTaskIpc(controller, assertTrustedSender);
+  registerGeminiConnectionIpc(controller, assertTrustedSender);
+  registerApprovalCenterIpc(controller, assertTrustedSender);
   ipcMain.handle(
     IPC_CHANNELS.invokeTool,
     async (event, toolName: unknown, input: unknown) => {
@@ -1150,6 +1165,7 @@ function registerIpc(controller: DesktopRuntimeController): void {
     }
     event.sender.setZoomFactor(scale);
   });
+  ipcMain.handle(IPC_CHANNELS.approvalDismiss, (event, flag: unknown) => controller.dismissApproval(event, flag));
   ipcMain.handle(IPC_CHANNELS.approvalGetCurrent, (event) => {
     return controller.approvalCurrent(event);
   });

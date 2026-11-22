@@ -1,6 +1,6 @@
 {
   "name": "sovereign-code-runtime",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "type": "module",
   "description": "Clean-room, self-hosted Windows MCP Agent Runtime desktop application.",

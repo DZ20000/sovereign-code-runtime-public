@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { DesktopApprovalContext, DesktopApprovalOpenResult, DesktopPendingApproval } from "@sovereign/control-plane-contract";
 
 export type ApprovalDecision = "allow-once" | "deny" | "drop-to-l1";
 export type ApprovalCancellationReason =
@@ -12,6 +13,7 @@ export type ApprovalCancellationReason =
   | "queue-overflow";
 
 export interface ApprovalRequestInput {
+  readonly context?: DesktopApprovalContext;
   readonly toolName: string;
   readonly title: string;
   readonly message: string;
@@ -46,6 +48,7 @@ export interface ApprovalLifecycleEvent {
 }
 
 export interface ApprovalSurface {
+  focus?(requestId: string): Promise<boolean> | boolean;
   present(request: ApprovalPresentation, signal: AbortSignal): Promise<ApprovalDecision>;
 }
 
@@ -161,6 +164,25 @@ export class ApprovalBroker {
     return this.#events.map((event) => ({ ...event }));
   }
 
+  snapshot(): readonly DesktopPendingApproval[] {
+    const now = this.#now();
+    const entries = [
+      ...(this.#active === null ? [] : [{ presentation: this.#active.pending.presentation, phase: "active" as const }]),
+      ...this.#queue.map(({ presentation }) => ({ presentation, phase: "queued" as const })),
+    ];
+    return entries
+      .filter(({ presentation }) => Date.parse(presentation.expiresAt) > now)
+      .map(({ presentation, phase }) => ({ ...structuredClone(presentation), phase }));
+  }
+
+  async open(requestId: string): Promise<DesktopApprovalOpenResult> {
+    const entry = this.snapshot().find((request) => request.id === requestId);
+    if (entry === undefined) return "unavailable";
+    if (entry.phase === "queued") return "queued";
+    // Focusing a trusted, already-presented surface cannot grant or replay a call.
+    return await this.#surface.focus?.(requestId) ? "opened" : "unavailable";
+  }
+
   pendingCount(): number {
     return this.#queue.length + (this.#active === null ? 0 : 1);
   }
@@ -169,10 +191,15 @@ export class ApprovalBroker {
     if (this.#active !== null) {
       return;
     }
-    const pending = this.#queue.shift();
-    if (pending === undefined) {
-      return;
+    let pending = this.#queue.shift();
+    while (pending !== undefined && Date.parse(pending.presentation.expiresAt) <= this.#now()) {
+      this.#record(pending.presentation, "cancelled", { reason: "timeout" });
+      pending.resolve("deny");
+      pending = this.#queue.shift();
     }
+    if (pending === undefined) return;
+    const expiresAt = Date.parse(pending.presentation.expiresAt);
+    const activePending = pending;
 
     const abortController = new AbortController();
     let settled = false;
@@ -192,7 +219,7 @@ export class ApprovalBroker {
 
     this.#active = { pending, abortController, cancel };
     this.#record(pending.presentation, "presented");
-    const timeout = setTimeout(() => cancel("timeout"), this.#timeoutMs);
+    const timeout = setTimeout(() => cancel("timeout"), Math.max(0, expiresAt - this.#now()));
     const surface = this.#surface.present(pending.presentation, abortController.signal).catch((): ApprovalDecision => {
       cancelReason ??= "surface-error";
       return "deny";
@@ -204,14 +231,16 @@ export class ApprovalBroker {
       }
       settled = true;
       clearTimeout(timeout);
-      const reason = cancelReason;
+      const reason = cancelReason ?? (this.#now() >= expiresAt ? "timeout" : null);
+      const handoff = activePending.presentation.context?.administratorRequired === true;
+      const result = reason === null && !(handoff && decision === "allow-once") ? decision : "deny";
       if (reason === null) {
-        this.#record(pending.presentation, "resolved", { decision });
+        this.#record(activePending.presentation, "resolved", { decision: result });
       } else {
-        this.#record(pending.presentation, "cancelled", { reason });
+        this.#record(activePending.presentation, "cancelled", { reason });
       }
       this.#active = null;
-      pending.resolve(decision);
+      activePending.resolve(result);
       this.#drain();
     });
   }

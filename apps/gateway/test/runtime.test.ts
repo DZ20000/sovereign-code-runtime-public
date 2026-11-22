@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -15,6 +15,14 @@ import {
   startGatewayRuntime,
   type ToolExecutionActivityEvent,
 } from "../src/runtime.js";
+
+const gatewayPackage = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+) as { readonly version?: unknown };
+if (typeof gatewayPackage.version !== "string" || gatewayPackage.version.length === 0) {
+  throw new Error("Gateway package metadata must declare a version.");
+}
+const gatewayPackageVersion = gatewayPackage.version;
 
 const fakeSerenaServerPath = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -35,7 +43,7 @@ describe("embedded Gateway runtime", () => {
     });
 
     try {
-      expect(runtime.manifest.runtimeVersion).toBe("0.1.6");
+      expect(runtime.manifest.runtimeVersion).toBe(gatewayPackageVersion);
       expect(runtime.host).toBe("127.0.0.1");
       expect(runtime.port).toBeGreaterThan(0);
       expect(runtime.endpoint).toBe(`http://127.0.0.1:${runtime.port}/mcp`);
@@ -78,7 +86,7 @@ describe("embedded Gateway runtime", () => {
       expect(manifest.status).toBe(200);
       await expect(manifest.json()).resolves.toMatchObject({
         schemaVersion: "scr.tools/v1",
-        runtimeVersion: "0.1.6",
+        runtimeVersion: gatewayPackageVersion,
         digest: runtime.manifest.digest,
       });
 
@@ -226,7 +234,7 @@ describe("embedded Gateway runtime", () => {
         result: {
           serverInfo: {
             name: "sovereign-code-runtime",
-            version: "0.1.6",
+            version: gatewayPackageVersion,
           },
         },
       });

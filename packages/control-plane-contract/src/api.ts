@@ -1,4 +1,9 @@
+import type { DesktopApprovalOpenResult, DesktopPendingApproval } from "./approvals.js";
 import type { DesktopConnectionCopyResult } from "./connection.js";
+import type {
+  DesktopGeminiConnectionConfigurationInput,
+  DesktopGeminiConnectionStatus,
+} from "./gemini-connection.js";
 import type {
   DesktopRendererHandoff,
   DesktopRendererUpdateStatus,
@@ -38,6 +43,9 @@ export interface SovereignDesktopApi {
   readonly start: () => Promise<DesktopRuntimeState>;
   readonly stop: () => Promise<DesktopRuntimeState>;
   readonly refresh: () => Promise<DesktopRuntimeState>;
+  readonly getApprovals: () => Promise<readonly DesktopPendingApproval[]>;
+  readonly openApproval: (requestId: string) => Promise<DesktopApprovalOpenResult>;
+  readonly onApprovalCenterRequested?: (listener: () => void) => () => void;
   readonly getManifest: () => Promise<DesktopManifestView | null>;
   readonly getAuditReceipts: (
     limit?: number,
@@ -73,6 +81,12 @@ export interface SovereignDesktopApi {
     input: Readonly<Record<string, unknown>>,
   ) => Promise<T>;
   readonly copyConnectionBundle: () => Promise<DesktopConnectionCopyResult>;
+  readonly getGeminiConnection: () => Promise<DesktopGeminiConnectionStatus>;
+  readonly configureGeminiConnection: (
+    input: DesktopGeminiConnectionConfigurationInput,
+  ) => Promise<DesktopGeminiConnectionStatus>;
+  readonly startGeminiConnection: () => Promise<DesktopGeminiConnectionStatus>;
+  readonly stopGeminiConnection: () => Promise<DesktopGeminiConnectionStatus>;
   readonly rotateCredentials: () => Promise<DesktopRuntimeState>;
   readonly setAutoStart: (enabled: boolean) => Promise<DesktopRuntimeState>;
   readonly setUnattendedWorkspaceAccess: (

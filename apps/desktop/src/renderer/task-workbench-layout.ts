@@ -32,15 +32,14 @@ export function mountTaskWorkbenchLayout(): void {
     if (value !== null && typeof value === "object" && !Array.isArray(value)) saved = value as Record<string, unknown>;
   } catch { /* Unavailable or malformed preferences use the default layout. */ }
   const widths = {
-    navigation: taskPaneWidth(saved.navigation, 164, 320, 196),
-    tasks: taskPaneWidth(saved.tasks, 300, 620, 360),
+    navigation: taskPaneWidth(saved.navigation, 208, 320, 232),
+    tasks: taskPaneWidth(saved.tasks, 208, 420, 224),
   };
   const persist = (): void => {
     try { localStorage.setItem(WIDTHS_KEY, JSON.stringify(widths)); }
     catch { /* Resizing still works when browser storage is unavailable. */ }
   };
   const popovers = [
-    [element("#task-steps-toggle"), element("#task-steps-popover")],
     [element("#task-info-toggle"), element("#task-info-popover")],
   ] as const;
   const positionPopover = (button: HTMLElement, popover: HTMLElement): void => {
@@ -56,8 +55,8 @@ export function mountTaskWorkbenchLayout(): void {
     });
   }
   const panes = [
-    { key: "navigation", handle: element("#task-navigation-resizer"), target: shell, property: "--ui-sidebar-width", minimum: 164, maximum: () => Math.min(320, window.innerWidth - 720) },
-    { key: "tasks", handle: element("#task-list-resizer"), target: workbench, property: "--task-list-width", minimum: 300, maximum: () => Math.min(620, workbench.clientWidth - 340) },
+    { key: "navigation", handle: element("#task-navigation-resizer"), target: shell, property: "--ui-sidebar-width", minimum: 208, maximum: () => Math.min(320, window.innerWidth - 720) },
+    { key: "tasks", handle: element("#task-list-resizer"), target: workbench, property: "--task-list-width", minimum: 208, maximum: () => Math.min(420, workbench.clientWidth - 340) },
   ] as const;
   const sync = (): void => {
     if (workbench.clientWidth === 0) return;

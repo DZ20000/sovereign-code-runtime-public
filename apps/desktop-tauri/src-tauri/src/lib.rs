@@ -469,8 +469,10 @@ async fn control_call(
 fn renderer_preflight_control_allowed(method: &str, params: &Value) -> bool {
     match method {
         "state.get"
+        | "gemini.connection.read"
         | "manifest.get"
         | "audit.list"
+        | "approvals.list"
         | "runs.list"
         | "runs.get"
         | "tasks.snapshot"
@@ -1174,6 +1176,7 @@ pub fn run() {
             host_startup_set,
             copy_connection_bundle,
             approval_current,
+            approval::approval_dismiss,
             approval_resolve
         ])
         .build(tauri::generate_context!())
@@ -1199,8 +1202,8 @@ pub fn run() {
 mod tests {
     use super::{
         exit_for_restart_requested, parse_update_preflight_values,
-        ApplicationLifecycle,
-        UpdatePreflightMetadata, EXIT_FOR_RESTART_ARGUMENT, EXIT_MODE_RUNNING,
+        renderer_preflight_control_allowed, ApplicationLifecycle, UpdatePreflightMetadata,
+        EXIT_FOR_RESTART_ARGUMENT, EXIT_MODE_RUNNING,
     };
 
     #[test]
@@ -1215,6 +1218,24 @@ mod tests {
         let restart = ApplicationLifecycle::default();
         assert!(restart.begin_guardian_restart());
         assert!(!restart.guardian_shutdown_requested());
+    }
+
+    #[test]
+    fn preflight_allows_status_but_rejects_connection_and_approval_actions() {
+        let params = serde_json::json!({});
+        assert!(renderer_preflight_control_allowed(
+            "gemini.connection.read",
+            &params
+        ));
+        assert!(renderer_preflight_control_allowed("approvals.list", &params));
+        for method in [
+            "approvals.open",
+            "gemini.connection.configure",
+            "gemini.connection.start",
+            "gemini.connection.stop",
+        ] {
+            assert!(!renderer_preflight_control_allowed(method, &params));
+        }
     }
 
     #[test]

@@ -11,7 +11,7 @@ describe("task message character count wiring", () => {
   it("keeps the counter, submit eligibility and restored drafts synchronized", () => {
     const controller = source("apps/desktop/src/renderer/tasks-controller.ts");
     const view = source("apps/desktop/src/renderer/view-tasks.ts");
-    const styles = source("apps/desktop/src/renderer/task-hub.css");
+    const styles = source("apps/desktop/src/renderer/v2.css");
     const localization = source(
       "apps/desktop/src/renderer/task-board-localization.ts",
     );

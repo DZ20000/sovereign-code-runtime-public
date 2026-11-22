@@ -40,6 +40,8 @@ jobs:
         run: node --test scripts/public-source-check.test.mjs
       - name: Check public source for private state and credentials
         run: node scripts/public-source-check.mjs --root .
+      - name: Check actual source structure and size ceilings
+        run: pnpm audit:source-structure
       - run: pnpm typecheck
       - name: Verify Windows protected pairing
         run: pnpm exec vitest run apps/gateway/test/gemini-local-connection.test.ts --reporter=verbose

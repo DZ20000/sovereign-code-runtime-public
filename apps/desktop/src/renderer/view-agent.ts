@@ -1,68 +1,13 @@
+import { renderGeminiConnectionView } from "./view-gemini-connection.js";
+import { renderUiIcon } from "./ui-icons.js";
+
 export function renderAgentView(): string {
   return `
-    <div class="agent-workbench">
-      <section class="agent-status-strip agent-status-strip-two agent-status-strip-compact" aria-label="ChatGPT connection status">
-        <div class="agent-status-item">
-          <span>Host</span>
-          <strong id="web-agent-gateway">Host offline</strong>
-        </div>
-        <div class="agent-status-item">
-          <span>ChatGPT</span>
-          <strong id="web-agent-client">ChatGPT disconnected</strong>
-        </div>
-        <span class="visually-hidden" aria-live="polite"><strong id="web-session-badge">Connection not configured</strong></span>
-      </section>
-
-      <section class="agent-authority-section agent-authority-priority">
-        <div class="agent-authority-heading">
-          <div>
-            <h2>ChatGPT permissions</h2>
-            <span id="web-permission-description">Read-only access</span>
-          </div>
-          <strong id="web-profile-badge" class="visually-hidden" aria-live="polite">Read only · L1</strong>
-        </div>
-        <p id="web-permission-guidance" class="agent-authority-intro">Choose one permission level. Changes apply immediately to connected sessions.</p>
-        <div id="web-permission-profiles" class="permission-segment" role="group" aria-label="ChatGPT permission level">
-          <button class="permission-profile-option" data-permission-profile="observe" type="button" aria-pressed="false">
-            <span class="permission-profile-indicator" aria-hidden="true"></span>
-            <span class="permission-profile-copy"><strong class="permission-profile-title">Read only</strong><span class="permission-profile-description">Read files, search and inspect project status.</span></span>
-            <span class="permission-profile-level">L1 · Observe</span>
-          </button>
-          <button class="permission-profile-option" data-permission-profile="workspace" type="button" aria-pressed="false">
-            <span class="permission-profile-indicator" aria-hidden="true"></span>
-            <span class="permission-profile-copy"><strong class="permission-profile-title">Work in this folder</strong><span class="permission-profile-description">Read and edit files inside the authorized folder.</span></span>
-            <span class="permission-profile-level">L2 · Workspace</span>
-          </button>
-          <button class="permission-profile-option" data-permission-profile="consequential" type="button" aria-pressed="false">
-            <span class="permission-profile-indicator" aria-hidden="true"></span>
-            <span class="permission-profile-copy"><strong class="permission-profile-title">Ask for high-risk actions</strong><span class="permission-profile-description">Work in this folder; ask before high-risk actions.</span></span>
-            <span class="permission-profile-level">L3 · Confirm</span>
-          </button>
-          <button id="web-bypass-toggle" class="permission-profile-option permission-bypass-option" data-bypass-toggle data-permission-bypass type="button" aria-pressed="false" aria-describedby="web-bypass-description">
-            <span class="permission-profile-indicator" aria-hidden="true"></span>
-            <span class="permission-profile-copy"><strong class="permission-profile-title">Without confirmation</strong><span id="web-bypass-description" class="permission-profile-description">Allow actions without Sovereign approval prompts.</span></span>
-            <span class="permission-profile-level">L4 · No prompts</span>
-          </button>
-        </div>
-        <span id="web-bypass-state" class="visually-hidden">Confirmation behavior follows the selected permission level.</span>
-        <span id="web-agent-authority" hidden>Read only · L1</span>
-      </section>
-
-      <section class="agent-connect-section">
-        <div class="agent-section-heading">
-          <div>
-            <h2>Secure MCP Tunnel</h2>
-            <span id="secure-tunnel-status">Checking connector…</span>
-          </div>
-          <div class="agent-connect-actions">
-            <button id="secure-tunnel-start" class="button button-primary" type="button">Start connection</button>
-            <button id="secure-tunnel-stop" class="button button-secondary" type="button">Stop connection</button>
-            <button id="secure-tunnel-refresh" class="button button-ghost" type="button">Retry detection</button>
-          </div>
-        </div>
-
-        <ul id="agent-route-strip" class="agent-route-strip" hidden></ul>
-
+    <dialog id="connection-drawer" class="v2-drawer" aria-labelledby="connection-drawer-title">
+      <header class="v2-drawer-heading"><h2 id="connection-drawer-title">Connect ChatGPT</h2><button id="connection-drawer-close" class="icon-button" type="button" aria-label="Close configuration">${renderUiIcon("close")}</button></header>
+      <section id="connection-panel-chatgpt" class="v2-drawer-panel" data-connection-panel="chatgpt" hidden>
+        <p class="v2-setup-steps">① Configure → ② Start → ③ Add to ChatGPT</p>
+        <div class="v2-drawer-scroll">
         <div class="agent-field-grid agent-field-grid-primary">
           <label class="agent-field" for="secure-tunnel-id">
             <span>Tunnel ID</span>
@@ -88,6 +33,7 @@ export function renderAgentView(): string {
         <details class="agent-connection-advanced agent-advanced">
           <summary>Advanced connection options</summary>
           <div class="agent-connection-advanced-body agent-advanced-content">
+            <ul id="agent-route-strip" class="agent-route-strip" hidden></ul>
             <label class="agent-field agent-field-wide" for="secure-tunnel-proxy">
               <span>Primary OpenAI control-plane proxy <em>Optional</em></span>
               <div class="agent-input-action">
@@ -138,6 +84,20 @@ export function renderAgentView(): string {
               <code id="secure-tunnel-path">Not detected</code>
             </div>
 
+
+          </div>
+        </details>
+        <p id="secure-tunnel-status" class="connection-feedback"></p>
+        </div>
+        <footer class="v2-drawer-footer"><button id="secure-tunnel-refresh" class="button button-ghost" type="button">Refresh status</button><span></span><button id="v2-chatgpt-drawer-start" class="button button-primary" type="button">Start connection</button><button id="v2-chatgpt-drawer-stop" class="button button-secondary" type="button" hidden>Stop connection</button></footer>
+      </section>
+      ${renderGeminiConnectionView()}
+      <section id="connection-panel-advanced" class="v2-drawer-panel" data-connection-panel="advanced" hidden>
+        <div class="v2-drawer-scroll">
+          <div class="v2-section-heading"><h3>Host</h3><span id="runtime-command-state" class="connection-status">Stopped</span></div>
+          <div class="v2-inline-actions"><button id="start-runtime" class="button button-primary" type="button">Start runtime</button><button id="stop-runtime" class="button button-secondary" type="button">Stop runtime</button><button id="refresh-runtime" class="button button-ghost" type="button">Refresh</button></div>
+          <dl class="v2-facts"><div><dt>Active MCP sessions</dt><dd id="connections-session-count">0</dd></div></dl>
+          <details class="v2-disclosure"><summary>Local and other MCP clients</summary>
             <div class="agent-local-connection-options">
               <div class="agent-advanced-row agent-endpoint-row">
                 <div><strong>Local MCP endpoint</strong><span>Loopback only</span></div>
@@ -160,9 +120,25 @@ export function renderAgentView(): string {
                 <button id="web-copy-connection" class="button button-secondary" type="button">Copy connection</button>
               </div>
             </div>
-          </div>
-        </details>
+          </details>
+          <details class="v2-disclosure"><summary>Runtime details</summary>
+            <dl class="v2-facts">
+              <div><dt>Runtime state</dt><dd id="metric-runtime-state">Stopped</dd></div>
+              <div><dt>Version</dt><dd id="metric-runtime-version">—</dd></div>
+              <div><dt>Workspace</dt><dd id="detail-workspace" data-no-i18n>Not selected</dd></div>
+              <div><dt>Local endpoint</dt><dd id="detail-endpoint" data-no-i18n>Not running</dd></div>
+              <div><dt>Tools</dt><dd id="metric-tool-count">0</dd></div>
+              <div><dt>Capabilities</dt><dd id="metric-capability-count">0</dd></div>
+              <div><dt>Self-hosting</dt><dd id="detail-self-hosting">Checking…</dd></div>
+              <div><dt>Manifest</dt><dd id="detail-manifest" data-no-i18n>—</dd></div>
+              <div><dt>Credential</dt><dd id="detail-credential">Not issued</dd></div>
+            </dl>
+            <div class="v2-inline-actions"><button id="copy-connection" class="button button-secondary" type="button">Copy connection</button><button id="rotate-credentials" class="button button-secondary" type="button">Rotate credential</button></div>
+          </details>
+          <section id="overview-attention-section" class="v2-disclosure" hidden><h3>Needs attention <span id="overview-attention-count">0</span></h3><div id="overview-attention-list"></div></section>
+          <details class="v2-disclosure"><summary>Recent activity <span id="overview-activity-state"></span></summary><div id="overview-run-list"></div></details>
+        </div>
+        <footer class="v2-drawer-footer"><span id="connection-badge" class="connection-status">Stopped</span><button class="button button-secondary" type="button" data-open-settings-tab="diagnostics">Open diagnostics</button></footer>
       </section>
-    </div>
-  `;
+    </dialog>`;
 }

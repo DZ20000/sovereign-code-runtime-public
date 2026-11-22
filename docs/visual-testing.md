@@ -1,108 +1,110 @@
-# Desktop Visual Testing
+# Desktop visual testing
 
-## Purpose
+The isolated Electron harness exercises the production desktop renderer, CSS and preload against synthetic IPC responses. It checks layout and interaction without launching a Gateway, RuntimeHost, external tunnel, Gemini listener, terminal process or real approval. It does not read a saved connection, user credential or production profile.
 
-Sovereign Code Runtime includes a deterministic offscreen Electron visual test for the production desktop renderer. It is intended to catch layout regressions that ordinary TypeScript and unit tests cannot detect, while keeping the test independent from user credentials, filesystem mutation, and live MCP sessions.
+Browser and desktop preview media are drawn on an unattached canvas inside that isolated renderer and marked as synthetic fixtures. The harness checks that the production image elements decode them; it never captures the operator's desktop or opens the depicted site.
 
-The harness is implemented in:
+## Running the checks
 
-```text
-apps/desktop/src/visual-test.ts
-apps/desktop/vite.visual.config.ts
+From the repository root, run the static script and isolation checks first:
+
+```powershell
+pnpm exec vitest run apps/desktop/test/visual-script-syntax.test.ts apps/desktop/test/visual-matrix.test.ts apps/desktop/test/visual-workspace.test.ts
 ```
 
-It uses the same built renderer, CSS, preload bridge, Chromium engine, sandbox, context isolation, and BrowserWindow security settings as the desktop application. Runtime state, manifest rows, capabilities, and audit receipts are supplied by a local fixture through the typed IPC contract.
-
-## Running the test
-
-From the repository root:
+After the renderer changes are complete, run the built renderer:
 
 ```powershell
 pnpm test:visual
 ```
 
-The normal test command also includes the visual pass:
+`pnpm test` also includes this visual pass. `verify:push` and the source-check workflow do not imply that the screenshot matrix ran; record the separate visual result when reviewing UI changes.
+
+To exercise only Task interactions and the four Task surfaces across the same eight contexts:
 
 ```powershell
-pnpm test
+$env:SCR_VISUAL_SCOPE = 'tasks'
+pnpm test:visual
+Remove-Item Env:SCR_VISUAL_SCOPE
 ```
 
-The visual harness does not open a visible application window and does not require an MCP client, Bearer credential, or external service.
+For a focused interaction rerun while refining behavior, use `SCR_VISUAL_SCOPE=checks`; it skips the main matrix and popup captures and records `verificationStatus: "checks-only"`. This does not replace the final complete visual run.
 
-## Captured surfaces
+For a change limited to the developer tools, `SCR_VISUAL_SCOPE=workbench` runs only the native editor, output-tab, workflow, browser and computer interaction checks. It also records `checks-only`; the other passing checks can be reused while iterating, then verified with the final complete matrix.
 
-Every run discovers and captures all thirteen registry-driven desktop pages:
+The launcher opens no visible window. It creates a fresh profile and evidence directory for every invocation. Running the harness does not restart or adopt an existing application.
 
-- Runtime
-- Agent
-- Runs
-- Terminal
-- Python
-- Browser
-- Workflows
-- Computer
-- Workspaces
-- Capabilities
-- Approvals
-- Audit
-- Settings
+## Actual CSS viewport matrix
 
-Each page is rendered at two supported content sizes:
+The main matrix is the Cartesian product of:
+
+| Dimension | Values |
+| --- | --- |
+| Language | `en`, `zh-CN` |
+| Theme | `light`, `dark` |
+| CSS viewport | `1040 × 680`, `1360 × 860` |
+| Electron zoom | exactly `1` |
+
+Before each capture the harness verifies `window.innerWidth`, `window.innerHeight`, the document language and applied theme, and the Electron zoom factor. Routine success confirmations are dismissed through their real close control; error alerts are retained. A zoomed 1040-pixel window is not accepted as a 1040-pixel CSS viewport.
+
+Each of the eight contexts captures twenty-one surfaces:
+
+- Full Home and single-page Simple Home.
+- ChatGPT and Gemini configuration drawers.
+- Gemini protected-values, import-preview and preset dialogs.
+- Task conversation, steps, associated output and all-run history.
+- Pending approvals and the audit center with an opened receipt.
+- General and appearance, Workspace and permissions, and Advanced and diagnostics settings.
+- Terminal, Python, Browser, Computer after capturing the synthetic desktop, and Workflows.
+
+The four primary navigation entries are Home and connections, Tasks, Approvals and audit, and Settings. Developer tools start collapsed. Simple mode hides the sidebar and developer tools and keeps its default Home within one page. Agent and Runs are no longer independently mounted pages.
+
+The main matrix produces 168 PNGs. The Tasks-only scope produces 32 PNGs. Separate stress captures check Chinese text at 130% font size and 100%/150% application zoom; these are explicitly recorded as scaling probes, not substituted for the matrix's required CSS viewports.
+
+## Approval windows and interaction checks
+
+The approval popup uses the production approval renderer and its own isolated BrowserWindow. It covers both languages and themes at `560 × 480` and `480 × 340`, plus a Chinese dark-theme small-window stress case at 130% font size and 150% CSS interface scale. The ten scenarios per context produce 90 popup captures:
+
+- Normal, destructive and administrator-handoff requests.
+- Request flooding, expiration and unavailable request state.
+- A failed acknowledgement for each risk class.
+- A pending acknowledgement with controls disabled.
+
+Only a fixture explicitly marked as requiring an administrator is shown as handoff. Its action sends `deny` and returns control to the operator. The harness verifies exactly one resolution attempt, no retry after an uncertain acknowledgement, no decision when opening a queued request, and recovery back to the approval center. Every IPC action remains inside the fixture.
+
+Other functional probes retain important behavior while following the v2 information architecture:
+
+- Task selection, five queue semantics, inferred activity, history pagination, stale-response protection, refresh stability and coordination information.
+- Per-task drafts, literal message preservation through localization, IME confirmation, native keyboard submission and no duplicate send.
+- Navigation and Task-list pointer/keyboard resizing and saved widths.
+- One permissions editor, explicit Apply, L4 state across reload and Full/Simple mode, and project-directory changes that do not alter the base workspace permission.
+- Interface previews that are saved only on explicit Save, system theme changes, native select keyboard interaction and reduced motion.
+- Gemini import preview, presets, protected-value modal Cancel/Escape, staged Apply, exact keep/replace/forget payloads, failed-save draft retention, save without starting, explicit listener start/stop, and fixed error text. Protected drafts never enter localStorage.
+- ChatGPT protected fields remain empty when a stored value exists. Tunnel readiness, Gemini listener readiness and the aggregate MCP session count are checked as different facts.
+- Real CodeMirror editing, code-preserving localization, workflow undo/focus, terminal scroll following and selected browser/computer state. Python output tabs retain the draft and selection across refresh without another run. Browser view tabs retain the same observation and do not trigger another browser operation.
+
+## Output ownership and evidence
+
+The launcher always allocates a unique directory under the current repository:
 
 ```text
-1360×860  default application size
-1040×680  minimum application size
+.sovereign/scratch/v2-visual-<unique suffix>/
 ```
 
-This produces 26 PNG screenshots under:
+It does not honor an inherited output or profile destination. Before Electron uses a profile, the harness validates that the evidence directory is a direct child of this repository's scratch directory, that its run marker matches, and that its `user-data` directory has no symlink or junction escape. It removes only that run's profile after the Electron child exits. Screenshots and reports are retained; another run's files and arbitrary supplied paths are never cleanup targets.
+
+The launcher prints the exact evidence path. Main captures are organized as:
 
 ```text
-apps/desktop/visual-artifacts/1360x860/
-apps/desktop/visual-artifacts/1040x680/
+en/light/1040x680/home-full.png
+zh-CN/dark/1360x860/connection-gemini.png
+approval/en/light/560x480-font-1-ui-1/normal-pending.png
 ```
 
-A machine-readable report is written to:
+`report.json` uses `scr.visual-test/v2`. It is first written with `verificationStatus: "matrix-only"` after capture and changes to `"complete"` only after the interaction checks finish. A matrix-only report is not a complete pass. It records each main capture's language, theme, mode, actual viewport, zoom, file dimensions, SHA-256, active view and layout audit. `approval-states.json` records the popup scenarios and observed decision counts. Additional JSON files document the Task, project-workspace, shared-control, Home and developer-tool checks. A failure also retains its screenshot, DOM snapshot and error in the same owned directory; all input values in these files come from fixtures.
 
-```text
-apps/desktop/visual-artifacts/report.json
-```
+The layout pass fails on incorrect active views, horizontal overflow, shell-width mismatch, duplicate DOM identifiers or missing required controls. Edge crowding, ambiguous affordances, tight gutters and possible clipped text remain review findings in the report. Human screenshot review is required to assess hierarchy, typography and visual consistency; a zero-error geometry report alone is not design approval.
 
-Every screenshot record contains its relative path, exact dimensions, byte length, SHA-256 digest, active page, document dimensions, shell bounds, and layout-audit results.
+## Scope of this evidence
 
-## Enforced invariants
-
-The run fails when any of the following conditions is detected:
-
-1. More or fewer than one requested page is active.
-2. The document creates horizontal overflow beyond the viewport.
-3. The application shell does not fill the renderer viewport.
-4. A visible element outside an intentional scroll container extends beyond the horizontal viewport.
-5. The DOM contains duplicate identifiers.
-6. A required shell, navigation, status, or active-page element is absent.
-7. Leaf text is clipped by a hidden or clipped overflow rule without an intentional ellipsis treatment.
-
-Animations and transitions are disabled during capture so that PNG output and geometry remain stable.
-
-## Evidence interpretation
-
-A zero-error report confirms that the rendered application satisfies the checked geometry and DOM invariants for the tested states and viewports. PNGs remain available for human review of hierarchy, typography, spacing, contrast, visual balance, and other qualities that are not safely reducible to a single numeric threshold.
-
-The fixture represents a running local Gateway with a selected workspace, forty-eight manifest tools, twenty-one capabilities, representative Web Agent/bridge state, terminal/browser/computer state, run records, and successful, denied, and failed audit receipts. It deliberately contains no production token or user data.
-
-## Scope boundary
-
-The offscreen pass is a renderer-level visual regression test. It does not replace a governed Windows desktop smoke test of the packaged executable. A full physical smoke pass additionally verifies:
-
-- process launch and shutdown;
-- native window chrome and focus behavior;
-- Windows folder-picker integration;
-- installer shortcuts and uninstall behavior;
-- host DPI and display scaling;
-- GPU-driver-specific rendering;
-- live keyboard, mouse, accessibility, and window-management interactions.
-
-Those operations should be exercised through an authorized Not-Computer session or another controlled Windows UI automation environment. They must not bypass capability leases, user approvals, observation revisions, or action receipts.
-
-## Baseline policy
-
-The repository currently records generated screenshots as local ignored artifacts rather than committed pixel baselines. This avoids treating anti-aliasing, GPU, font-rasterization, and Chromium-version differences as source changes. A future baseline system should normalize the execution environment and use perceptual comparison with explicit review, rather than requiring byte-identical PNG output across arbitrary Windows hosts.
+This is a Chromium renderer check using the production DOM and bridge, with sandboxing and context isolation enabled. It does not demonstrate real OAuth, DPAPI, external tunnel health, native Windows folder pickers, live approvals, Tauri WebView2 rendering, installer behavior or real display DPI. Those behaviors need their existing unit, transport, native or isolated packaged-smoke checks. Do not label a build released merely because the visual harness passed.

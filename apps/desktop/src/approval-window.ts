@@ -8,9 +8,10 @@ import type {
   ApprovalPresentation,
   ApprovalSurface,
 } from "./approval-broker.js";
-import type {
-  DesktopApprovalDecision,
-  DesktopApprovalView,
+import {
+  IPC_CHANNELS,
+  type DesktopApprovalDecision,
+  type DesktopApprovalView,
 } from "./shared.js";
 
 export interface ApprovalWindowControllerOptions {
@@ -51,7 +52,8 @@ export class ApprovalWindowController implements ApprovalSurface {
       const parent = this.#parentWindow();
       const window = new BrowserWindow({
         width: 560,
-        height: 430,
+        height: 480,
+        useContentSize: true,
         center: true,
         show: false,
         ...(parent === null || parent.isDestroyed() ? {} : { parent }),
@@ -62,7 +64,7 @@ export class ApprovalWindowController implements ApprovalSurface {
         fullscreenable: false,
         skipTaskbar: true,
         autoHideMenuBar: true,
-        backgroundColor: "#1e1f22",
+        backgroundColor: "#f6f7f9",
         title: "Sovereign approval",
         webPreferences: {
           preload: this.#preloadPath,
@@ -122,6 +124,27 @@ export class ApprovalWindowController implements ApprovalSurface {
     });
   }
 
+  focus(requestId: string): boolean {
+    const window = this.#window;
+    if (this.#pending?.id !== requestId || Date.parse(this.#pending.expiresAt) <= Date.now()
+      || window === null || window.isDestroyed()) return false;
+    window.show();
+    window.focus();
+    return true;
+  }
+
+  dismiss(event: IpcMainInvokeEvent, returnToCenter: unknown = false): void {
+    this.#assertSender(event);
+    if (typeof returnToCenter !== "boolean") throw new Error("Approval dismissal is invalid.");
+    this.#finish?.("deny");
+    const parent = this.#parentWindow();
+    if (returnToCenter && parent !== null && !parent.isDestroyed()) {
+      parent.show();
+      parent.focus();
+      parent.webContents.send(IPC_CHANNELS.approvalCenterRequested);
+    }
+  }
+
   current(event: IpcMainInvokeEvent): DesktopApprovalView | null {
     this.#assertSender(event);
     const pending = this.#pending;
@@ -151,6 +174,13 @@ export class ApprovalWindowController implements ApprovalSurface {
     }
     if (decision === "drop-to-l1" && !pending.burstDetected) {
       throw new Error("Drop-to-L1 is only available during approval flood handling.");
+    }
+    if (decision === "allow-once" && Date.parse(pending.expiresAt) <= Date.now()) {
+      finish("deny");
+      throw new Error("Approval request has expired.");
+    }
+    if (decision === "allow-once" && pending.context?.administratorRequired === true) {
+      throw new Error("Administrator handoff cannot grant tool execution.");
     }
     finish(decision satisfies DesktopApprovalDecision);
   }

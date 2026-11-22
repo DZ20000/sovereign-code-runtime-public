@@ -11,6 +11,10 @@ export const CONTROL_REQUEST_METHODS = [
   "project.workspace.choose",
   "project.workspace.select",
   "connection.bundle",
+  "gemini.connection.read",
+  "gemini.connection.configure",
+  "gemini.connection.start",
+  "gemini.connection.stop",
   "credential.rotate",
   "settings.auto-start",
   "settings.unattended-workspace-access",
@@ -32,6 +36,8 @@ export const CONTROL_REQUEST_METHODS = [
   "tasks.message.user",
   "tool.invoke",
   "audit.list",
+  "approvals.list",
+  "approvals.open",
   "owned-processes.list",
   "cutover.status",
   "cutover.quiesce",
@@ -52,6 +58,7 @@ export const SHELL_REQUEST_METHODS = [
   "secret.restore",
   "prompt",
   "approval.present",
+  "approval.focus",
 ] as const;
 export type ShellRequestMethod = (typeof SHELL_REQUEST_METHODS)[number];
 

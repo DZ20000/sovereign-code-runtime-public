@@ -1,11 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { DesktopApprovalView, SovereignApprovalApi } from "@sovereign/control-plane-contract";
-import "../../desktop/src/renderer/approval.css";
+import "../../desktop/src/renderer/tokens.css";
+import "../../desktop/src/renderer/v2.css";
 
 const approvalSmokeAutoAllow =
   new URL(window.location.href).searchParams.get("approvalSmoke") === "allow-once";
 
 const api: SovereignApprovalApi = {
+  dismiss: (returnToCenter = false) => invoke<void>("approval_dismiss", { returnToCenter }),
   async getCurrent() {
     const approval = await invoke<DesktopApprovalView | null>("approval_current");
     if (

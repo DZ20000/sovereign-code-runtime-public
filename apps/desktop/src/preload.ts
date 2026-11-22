@@ -3,7 +3,10 @@ import { contextBridge, ipcRenderer } from "electron";
 import {
   IPC_CHANNELS,
   type DesktopAuditReceipt,
+  type DesktopPendingApproval,
+  type DesktopApprovalOpenResult,
   type DesktopConnectionCopyResult,
+  type DesktopGeminiConnectionStatus,
   type DesktopDirectToolName,
   type DesktopHostStartupState,
   type DesktopManifestView,
@@ -95,6 +98,13 @@ const api: SovereignDesktopApi = {
     ipcRenderer.invoke(IPC_CHANNELS.refresh) as Promise<DesktopRuntimeState>,
   getManifest: () =>
     ipcRenderer.invoke(IPC_CHANNELS.getManifest) as Promise<DesktopManifestView | null>,
+  getApprovals: () => ipcRenderer.invoke(IPC_CHANNELS.getApprovals) as Promise<readonly DesktopPendingApproval[]>,
+  openApproval: (requestId) => ipcRenderer.invoke(IPC_CHANNELS.openApproval, requestId) as Promise<DesktopApprovalOpenResult>,
+  onApprovalCenterRequested(listener) {
+    const handler = (): void => listener();
+    ipcRenderer.on(IPC_CHANNELS.approvalCenterRequested, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.approvalCenterRequested, handler);
+  },
   getAuditReceipts: (limit = 100) =>
     ipcRenderer.invoke(
       IPC_CHANNELS.getAuditReceipts,
@@ -141,6 +151,14 @@ const api: SovereignDesktopApi = {
     ipcRenderer.invoke(
       IPC_CHANNELS.copyConnectionBundle,
     ) as Promise<DesktopConnectionCopyResult>,
+  getGeminiConnection: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.getGeminiConnection) as Promise<DesktopGeminiConnectionStatus>,
+  configureGeminiConnection: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.configureGeminiConnection, input) as Promise<DesktopGeminiConnectionStatus>,
+  startGeminiConnection: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.startGeminiConnection) as Promise<DesktopGeminiConnectionStatus>,
+  stopGeminiConnection: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.stopGeminiConnection) as Promise<DesktopGeminiConnectionStatus>,
   rotateCredentials: () =>
     ipcRenderer.invoke(IPC_CHANNELS.rotateCredentials) as Promise<DesktopRuntimeState>,
   setAutoStart: (enabled) =>

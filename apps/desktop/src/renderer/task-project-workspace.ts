@@ -1,5 +1,4 @@
 import type {
-  DesktopPermissionProfile,
   DesktopProjectWorkspaces,
   SovereignDesktopApi,
 } from "../shared.js";
@@ -45,14 +44,6 @@ export class TaskProjectWorkspaceController {
     });
     this.#element("task-project-workspace-retry").addEventListener("click", () => {
       void this.selectProject(this.#projectId);
-    });
-    this.#element<HTMLSelectElement>("task-project-workspace-permission").addEventListener("change", (event) => {
-      const profile = (event.currentTarget as HTMLSelectElement).value as DesktopPermissionProfile;
-      const workspaceId = this.#snapshot?.selectedWorkspaceId;
-      if (workspaceId) void this.#change(async (projectId) => {
-        await this.#api.setPermissionProfile(profile, workspaceId);
-        return await this.#api.readProjectWorkspaces(projectId);
-      });
     });
     this.#render();
   }
@@ -141,9 +132,16 @@ export class TaskProjectWorkspaceController {
     retry.hidden = this.#error === null;
     retry.disabled = this.#busy;
     const selected = workspaces.find((workspace) => workspace.id === this.#snapshot?.selectedWorkspaceId);
-    const permissions = this.#element<HTMLSelectElement>("task-project-workspace-permission");
-    permissions.value = selected?.permissionProfile ?? "observe";
-    permissions.disabled = this.#busy || selected === undefined;
+    this.#element("task-project-workspace-root").textContent = selected?.root ?? "—";
+    const permissions = this.#element<HTMLButtonElement>("task-project-workspace-permissions");
+    permissions.disabled = this.activeWorkspaceId === null;
+    permissions.dataset.workspaceId = this.activeWorkspaceId ?? "";
+    const profile = selected?.permissionProfile ?? "observe";
+    const labels = {
+      observe: "L1 · Read only", workspace: "L2 · Workspace",
+      consequential: "L3 · Confirm actions", bypass: "L4 · Bypass approvals",
+    };
+    this.#element("task-project-workspace-permission-summary").textContent = labels[profile];
     this.#element("task-project-workspace-access").hidden = selected === undefined;
     const status = this.#element("task-project-workspace-status");
     status.hidden = this.#error === null && !this.#busy && selected !== undefined && selected.id === this.#snapshot?.activeWorkspaceId;

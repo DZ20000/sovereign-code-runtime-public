@@ -11,6 +11,7 @@ import {
 
 import { ControlPlaneController, type ControlPlaneControllerOptions } from "../src/controller.js";
 import { SecureMcpTunnelController } from "../src/secure-tunnel.js";
+import { GeminiConnectionManager } from "../src/gemini-connection.js";
 import { DEFAULT_CONTROL_PLANE_SETTINGS, writeControlPlaneSettings } from "../src/settings.js";
 
 vi.mock("@sovereign/gateway/runtime", () => ({
@@ -161,4 +162,43 @@ describe("authoritative Gateway connection publication", () => {
       "The existing Gemini local pairing could not follow the current Gateway connection.",
     );
   });
+
+  it("keeps Gemini restoration separate from the ChatGPT route across promote and rollback", async () => {
+    const restore = vi.spyOn(GeminiConnectionManager.prototype, "restore");
+    const suspend = vi.spyOn(GeminiConnectionManager.prototype, "suspend");
+    const publish = vi.fn(async () => {});
+    const { controller: previous } = await fixture({ publish, autoStart: true });
+    expect(restore).toHaveBeenCalledTimes(1);
+    const previousManager = restore.mock.contexts[0];
+
+    const { controller: candidate } = await fixture({ publish, passive: true });
+    expect(restore).toHaveBeenCalledTimes(1);
+    await previous.detachExternalTrafficForCutover("gemini-checkpoint");
+    expect(suspend.mock.contexts.at(-1)).toBe(previousManager);
+
+    await candidate.promoteCutoverCandidate("gemini-checkpoint", false);
+    expect(restore).toHaveBeenCalledTimes(2);
+    const candidateManager = restore.mock.contexts[1];
+    expect(candidateManager).not.toBe(previousManager);
+    await candidate.stop();
+    expect(suspend.mock.contexts.at(-1)).toBe(candidateManager);
+
+    await previous.resumeExternalTrafficAfterCutover("gemini-checkpoint", false);
+    expect(restore).toHaveBeenCalledTimes(3);
+    expect(restore.mock.contexts.at(-1)).toBe(previousManager);
+    await previous.stop();
+    expect(suspend.mock.contexts.at(-1)).toBe(previousManager);
+  });
+
+  it("permits passive status reads but denies manual Gemini mutations and isolated auto-restore", async () => {
+    const restore = vi.spyOn(GeminiConnectionManager.prototype, "restore");
+    const { controller: passive } = await fixture({ passive: true });
+    expect((await passive.getGeminiConnection()).phase).toBe("unconfigured");
+    await expect(passive.startGeminiConnection()).rejects.toThrow("Only the active Runtime Host");
+    await expect(passive.stopGeminiConnection()).rejects.toThrow("Only the active Runtime Host");
+    const { controller: isolated } = await fixture({ autoStart: true });
+    expect(isolated.state().phase).toBe("running");
+    expect(restore).not.toHaveBeenCalled();
+  });
+
 });

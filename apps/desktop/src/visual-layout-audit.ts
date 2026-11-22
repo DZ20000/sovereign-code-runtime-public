@@ -35,7 +35,17 @@ export const layoutAuditScript = String.raw`
     // A screen-reader-only subtree still lays out, so it has to be excluded by
     // intent rather than by measurement: sighted readers never see any of it.
     const screenReaderOnly = element.closest(".sr-only, .visually-hidden") !== null;
-    return !screenReaderOnly && style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) > 0 && rect.width > 0 && rect.height > 0;
+    return !screenReaderOnly && element.checkVisibility() && style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) > 0 && rect.width > 0 && rect.height > 0;
+  };
+  const scrollsHorizontally = (element) => {
+    // A tab strip or output pane may intentionally scroll; its own outer box
+    // still has to fit. Do not excuse overflow in the main page scroller.
+    for (let parent=element.parentElement;parent&&parent!==document.body;parent=parent.parentElement) {
+      if (parent.matches('.content-scroll,.application-shell')) continue;
+      const style=getComputedStyle(parent);
+      if (['auto','scroll'].includes(style.overflowX)&&parent.scrollWidth>parent.clientWidth+1) return true;
+    }
+    return false;
   };
   const describe = (element) => {
     const id = element.id ? "#" + element.id : "";
@@ -57,7 +67,7 @@ export const layoutAuditScript = String.raw`
   for (const element of document.querySelectorAll("body *")) {
     if (!(element instanceof HTMLElement) || !isVisible(element)) continue;
     const rect = element.getBoundingClientRect();
-    const intentionallyScrollable =
+    const intentionallyScrollable = scrollsHorizontally(element) ||
       element.closest(".table-scroll, .terminal-output, .terminal-session-list, .browser-session-list, .browser-text-output, .browser-element-list, .workflow-template-list, .computer-window-list") !== null ||
       element.closest(".content-scroll") === element;
     if (!intentionallyScrollable && (rect.left < -1 || rect.right > window.innerWidth + 1)) {
@@ -68,7 +78,8 @@ export const layoutAuditScript = String.raw`
     const elementStyle = getComputedStyle(element);
     const intentionalEllipsis =
       element.matches("dd, td, .tool-row strong, .workspace-copy strong, .terminal-session-row strong, .browser-session-row strong, .browser-element-row strong, .browser-element-row div > span, .computer-window-row strong, .workflow-template-card strong, .workflow-template-card span, .workflow-template-card small") ||
-      elementStyle.textOverflow === "ellipsis";
+      elementStyle.textOverflow === "ellipsis" ||
+      (Number.parseInt(elementStyle.webkitLineClamp, 10) > 0 && elementStyle.webkitBoxOrient === "vertical");
     const clipsX = elementStyle.overflowX === "hidden" || elementStyle.overflowX === "clip";
     const clipsY = elementStyle.overflowY === "hidden" || elementStyle.overflowY === "clip";
     if (
@@ -170,15 +181,16 @@ export const layoutAuditScript = String.raw`
 
   // Nothing paints the page gutter, so the surface walk above cannot see it.
   // It is the edge the reader actually perceives, so measure it on its own:
-  // how close the view's text comes to the scroll pane's inner boundary.
+  // how close the view's text comes to the page surface's outer boundary.
   const pageGutter = [];
   const scroller = document.querySelector(".content-scroll");
   const activeView = document.querySelector(".view.is-active");
   if (scroller instanceof HTMLElement && activeView instanceof HTMLElement) {
-    // The scrollbar is reserved outside the padding box and reads as chrome,
-    // so both gutters are measured to the pane's own border box.
-    const scrollerStyle = getComputedStyle(scroller);
-    const scrollerRect = scroller.getBoundingClientRect();
+    // v2 places the page padding on .main-surface, outside .content-scroll.
+    // Measuring the already inset scroller would demand that padding twice.
+    const pageSurface = scroller.closest('.main-surface') || scroller;
+    const scrollerStyle = getComputedStyle(pageSurface);
+    const scrollerRect = pageSurface.getBoundingClientRect();
     const paneLeft = scrollerRect.left + parseFloat(scrollerStyle.borderLeftWidth || "0");
     const paneRight = scrollerRect.right - parseFloat(scrollerStyle.borderRightWidth || "0");
     const worst = new Map();

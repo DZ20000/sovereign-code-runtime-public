@@ -1,3 +1,4 @@
+import { mountBrowserObservationTabs } from "./browser-observation-tabs.js";
 import type {
   DesktopBrowserElement,
   DesktopBrowserObservation,
@@ -77,6 +78,7 @@ export class BrowserController {
   }
 
   mount(): void {
+    mountBrowserObservationTabs();
     for (const selector of ["#browser-create", "#browser-create-empty"] as const) {
       requiredElement<HTMLButtonElement>(selector).addEventListener("click", () => {
         void this.create();
@@ -433,6 +435,7 @@ export class BrowserController {
       button.type = "button";
       button.dataset.browserSessionId = session.id;
       button.className = "browser-session-row";
+      button.title = session.title || session.url;
       button.classList.toggle("is-selected", session.id === this.#selectedSessionId);
       button.setAttribute("aria-pressed", String(session.id === this.#selectedSessionId));
       const identity = document.createElement("div");
@@ -472,7 +475,9 @@ export class BrowserController {
       requiredElement<HTMLElement>("#browser-text").textContent =
         "Select a session to inspect page text.";
       requiredElement<HTMLElement>("#browser-page-url").textContent = "—";
+      requiredElement<HTMLElement>("#browser-page-url").title = "";
       requiredElement<HTMLElement>("#browser-revision").textContent = "—";
+      requiredElement<HTMLElement>("#browser-revision").title = "";
       this.#renderPreview(null);
     }
     this.#renderActionState();
@@ -489,7 +494,9 @@ export class BrowserController {
     requiredElement<HTMLInputElement>("#browser-url").value = observation.url;
     requiredElement<HTMLElement>("#browser-page-url").setAttribute("data-no-i18n", "");
     requiredElement<HTMLElement>("#browser-page-url").textContent = observation.url;
+    requiredElement<HTMLElement>("#browser-page-url").title = observation.url;
     requiredElement<HTMLElement>("#browser-revision").textContent = observation.revision;
+    requiredElement<HTMLElement>("#browser-revision").title = observation.revision;
     requiredElement<HTMLElement>("#browser-network-status").textContent =
       `${observation.blockedRequestCount} blocked request${observation.blockedRequestCount === 1 ? "" : "s"}`;
     const accessibility = observation.accessibility
@@ -504,6 +511,8 @@ export class BrowserController {
       this.#renderPreview(
         `data:${observation.screenshotMediaType ?? "image/jpeg"};base64,${observation.screenshotBase64}`,
       );
+    } else {
+      this.#renderPreview(null);
     }
     this.#renderElements();
     this.#renderActionState();

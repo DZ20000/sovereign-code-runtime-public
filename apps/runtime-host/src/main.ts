@@ -21,6 +21,7 @@ import {
   type ControlProtocolMessage,
   type ControlRequestMethod,
   type DesktopPermissionProfile,
+  type DesktopGeminiConnectionConfigurationInput,
   type DesktopRuntimeCutoverCheckpointInput,
   type DesktopRuntimeCutoverDetachInput,
   type DesktopRuntimeCutoverDrainInput,
@@ -482,6 +483,10 @@ class RemoteShellPort implements ControlPlaneShellPort {
 class RemoteApprovalSurface implements ApprovalSurface {
   readonly #channel: HostProtocolChannel;
 
+  async focus(requestId: string): Promise<boolean> {
+    return (await this.#channel.callShell("approval.focus", { requestId }, { timeoutMs: 5_000 })) === true;
+  }
+
   constructor(channel: HostProtocolChannel) {
     this.#channel = channel;
   }
@@ -754,6 +759,17 @@ async function dispatchControlRequest(
     }
     case "connection.bundle":
       return active.connectionBundle();
+    case "gemini.connection.read":
+      return await active.getGeminiConnection();
+    case "gemini.connection.configure": {
+      const record = requiredRecord(params, "Gemini connection parameters");
+      const input = requiredRecord(record.input, "Gemini connection configuration");
+      return await active.configureGeminiConnection(input as unknown as DesktopGeminiConnectionConfigurationInput);
+    }
+    case "gemini.connection.start":
+      return await active.startGeminiConnection();
+    case "gemini.connection.stop":
+      return await active.stopGeminiConnection();
     case "credential.rotate":
       return await active.rotateCredentials();
     case "settings.auto-start": {
@@ -1012,6 +1028,12 @@ async function dispatchControlRequest(
       }
       const input = requiredRecord(record.input, "Tool input");
       return await active.invokeTool(toolName, input);
+    }
+    case "approvals.list":
+      return active.approvals();
+    case "approvals.open": {
+      const record = requiredRecord(params, "Approval focus parameters");
+      return await active.openApproval(requiredString(record.requestId, "Approval request id", 256));
     }
     case "audit.list": {
       const record = requiredRecord(params, "Audit list parameters");

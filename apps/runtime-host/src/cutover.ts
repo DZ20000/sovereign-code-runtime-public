@@ -39,8 +39,10 @@ const CUTOVER_METHODS = new Set<string>([
 
 const PASSIVE_CANDIDATE_METHODS = new Set<string>([
   "state.get",
+  "gemini.connection.read",
   "manifest.get",
   "audit.list",
+  "approvals.list",
   "runs.list",
   "runs.get",
   "tasks.snapshot",

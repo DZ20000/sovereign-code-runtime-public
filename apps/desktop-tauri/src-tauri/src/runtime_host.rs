@@ -40,6 +40,10 @@ const CONTROL_METHODS: &[&str] = &[
     "project.workspace.choose",
     "project.workspace.select",
     "connection.bundle",
+    "gemini.connection.read",
+    "gemini.connection.configure",
+    "gemini.connection.start",
+    "gemini.connection.stop",
     "credential.rotate",
     "settings.auto-start",
     "settings.unattended-workspace-access",
@@ -61,6 +65,8 @@ const CONTROL_METHODS: &[&str] = &[
     "tasks.message.user",
     "tool.invoke",
     "audit.list",
+    "approvals.list",
+    "approvals.open",
     "owned-processes.list",
     "cutover.status",
     "cutover.quiesce",
@@ -650,6 +656,10 @@ fn handle_shell_request(inner: Arc<RuntimeHostInner>, id: String, method: String
         },
         "prompt" => prompt_response(&inner.app, &params),
         "approval.present" => Ok(inner.approval.present(&id, params.clone())),
+        "approval.focus" => match params.get("requestId").and_then(Value::as_str) {
+            Some(request_id) => inner.approval.focus(request_id).map(Value::Bool),
+            None => Err("Approval request id is invalid.".to_string()),
+        },
         _ => Err(format!("Unknown Runtime Host shell request: {method}")),
     };
     respond(&inner, &id, result);

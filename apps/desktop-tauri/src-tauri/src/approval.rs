@@ -5,7 +5,7 @@ use std::{
 
 use serde_json::Value;
 use tauri::{
-    AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
+    AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
 };
 
 const APPROVAL_WINDOW_LABEL: &str = "approval";
@@ -70,6 +70,33 @@ impl ApprovalSurface {
         Value::String(decision)
     }
 
+    pub fn focus(&self, request_id: &str) -> Result<bool, String> {
+        let window = {
+            let pending = self
+                .pending
+                .lock()
+                .map_err(|_| "Approval state is unavailable.".to_string())?;
+            let matches = pending
+                .as_ref()
+                .and_then(|entry| entry.presentation.get("id"))
+                .and_then(Value::as_str)
+                == Some(request_id);
+            if !matches {
+                return Ok(false);
+            }
+            self.app.get_webview_window(APPROVAL_WINDOW_LABEL)
+        };
+        // Never hold the state lock across native UI calls or their close callbacks.
+        if let Some(window) = window {
+            window
+                .show()
+                .and_then(|_| window.set_focus())
+                .map_err(|_| "Could not focus the approval window.".to_string())?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
     pub fn current(&self) -> Result<Option<Value>, String> {
         let pending = self
             .pending
@@ -97,6 +124,16 @@ impl ApprovalSurface {
                 .ok_or_else(|| "Active approval request id is invalid.".to_string())?;
             if active_id != request_id {
                 return Err("Approval request id is stale or invalid.".into());
+            }
+            if decision == "allow-once"
+                && entry
+                    .presentation
+                    .get("context")
+                    .and_then(|context| context.get("administratorRequired"))
+                    .and_then(Value::as_bool)
+                    == Some(true)
+            {
+                return Err("Administrator handoff cannot grant tool execution.".into());
             }
             if decision == "drop-to-l1"
                 && entry
@@ -160,7 +197,7 @@ impl ApprovalSurface {
             WebviewUrl::App(approval_url.into()),
         )
         .title("Sovereign approval")
-        .inner_size(560.0, 430.0)
+        .inner_size(560.0, 480.0)
         .center()
         .resizable(false)
         .minimizable(false)
@@ -274,6 +311,29 @@ impl ApprovalSurface {
 pub fn assert_approval_sender(window: &WebviewWindow) -> Result<(), String> {
     if window.label() != APPROVAL_WINDOW_LABEL {
         return Err("Approval IPC request rejected because its sender is not the active approval window.".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn approval_dismiss(
+    window: WebviewWindow,
+    app: AppHandle,
+    return_to_center: bool,
+) -> Result<(), String> {
+    assert_approval_sender(&window)?;
+    // Destroying this trusted window follows the existing deny-on-close path.
+    window
+        .destroy()
+        .map_err(|_| "Could not close the approval window.".to_string())?;
+    if return_to_center {
+        if let Some(main) = app.get_webview_window("main") {
+            main.show()
+                .and_then(|_| main.set_focus())
+                .map_err(|_| "Could not focus the main window.".to_string())?;
+            app.emit_to("main", "approval-center-requested", ())
+                .map_err(|_| "Could not open the approval center.".to_string())?;
+        }
     }
     Ok(())
 }

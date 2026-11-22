@@ -1,5 +1,6 @@
 export * from "./api.js";
 export * from "./connection.js";
+export * from "./gemini-connection.js";
 export * from "./protocol.js";
 export * from "./renderer-update.js";
 export * from "./layered-update.js";
@@ -12,3 +13,4 @@ export * from "./runtime-cutover.js";
 export * from "./runtime-rolling.js";
 
 export * from "./runtime-candidate-update.js";
+export * from "./approvals.js";

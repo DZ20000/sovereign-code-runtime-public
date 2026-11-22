@@ -27,13 +27,13 @@ describe("navigation state", () => {
       startupView: "agent",
       experienceMode: "full",
       isReload: false,
-    })).toBe("agent");
+    })).toBe("overview");
     expect(resolveInitialView({
       lastView: "settings",
       startupView: "runs",
       experienceMode: "full",
       isReload: false,
-    })).toBe("runs");
+    })).toBe("tasks");
   });
 
   it("supports an explicit last-view cold-start preference", () => {

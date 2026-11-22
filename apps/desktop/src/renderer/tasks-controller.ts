@@ -1,6 +1,3 @@
-import "./task-board.css";
-import "./task-coordination-inbox.css";
-
 import type {
   DesktopTaskCategory,
   DesktopTaskDetail,
@@ -83,12 +80,14 @@ import {
 } from "./task-project-filter.js";
 import { renderTaskProjectGroupManager } from "./task-project-groups.js";
 import { mountTaskWorkbenchLayout, setTaskWorkbenchSelection } from "./task-workbench-layout.js";
+import { TaskDetailPanels, type TaskDetailTab } from "./task-detail-panels.js";
 
 interface TasksControllerOptions {
   readonly api: SovereignDesktopApi;
   readonly notify: (message: string, isError?: boolean) => void;
   readonly onSnapshotChanged?: (snapshot: DesktopTaskWorkspaceSnapshot) => void;
   readonly onProjectSelected?: (projectId: string | null) => Promise<void> | void;
+  readonly onRunScopeChanged?: (taskId: string | null) => void;
 }
 
 type LaneFilter = TaskHubLaneFilter;
@@ -324,12 +323,14 @@ export class TasksController {
   #messageHistory: TaskMessageHistory | null = null;
   readonly #sessionStorage: Storage | null;
   readonly #messageDrafts = new Map<string, string>();
+  readonly #panels: TaskDetailPanels;
 
   constructor(options: TasksControllerOptions) {
     this.#api = options.api;
     this.#notify = options.notify;
     this.#onSnapshotChanged = options.onSnapshotChanged;
     this.#onProjectSelected = options.onProjectSelected;
+    this.#panels = new TaskDetailPanels((taskId) => options.onRunScopeChanged?.(taskId), () => this.showRunHistory(), () => this.showProjects());
     this.#sessionStorage = taskHubSessionStorage();
     const session = readTaskHubSessionState(this.#sessionStorage);
     this.#selectedTaskId = session.selectedTaskId;
@@ -370,6 +371,7 @@ export class TasksController {
   }
   mount(): void {
     mountTaskWorkbenchLayout();
+    this.#panels.mount();
     this.#messageHistory = new TaskMessageHistory(this.#api, {
       button: requiredElement<HTMLButtonElement>("#task-message-load-older"),
       status: requiredElement<HTMLElement>("#task-message-history-status"),
@@ -451,8 +453,7 @@ export class TasksController {
         this.#projectsRenderSignature = "";
         if (lane === "all")
           requiredElement<HTMLElement>("#task-project-grid").scrollTop = 0;
-        if (this.#selectedTaskId !== null) this.showProjects();
-        else this.#renderProjects();
+        this.showProjects();
       },
     });
     this.#laneControls.mount();
@@ -609,6 +610,14 @@ export class TasksController {
     await this.#loadDetail(taskId, true);
   }
 
+  setDetailTab(tab: TaskDetailTab): void { this.#panels.setDetailTab(tab); }
+  showRunHistory(): void {
+    this.#laneFilter = "history";
+    this.#laneControls?.setActiveLane("history");
+    this.showProjects();
+    this.#panels.showRunHistory();
+  }
+
   showProjects(): void {
     this.#messageHistory?.select(null);
     this.#coordinationInbox?.clear();
@@ -628,6 +637,7 @@ export class TasksController {
     detailPane.hidden = true;
     requiredElement<HTMLElement>("#task-hub-list-pane").hidden = false;
     setTaskWorkbenchSelection(null);
+    this.#panels.showList();
     this.#projectsRenderSignature = "";
     this.#pendingListFocusTaskId = focusTaskId;
     this.#renderProjects();
@@ -924,6 +934,7 @@ export class TasksController {
       pendingSnapshot ? "—" : String(visibleTaskCount);
 
     const laneContent = BOARD_LANE_CONTENT[this.#laneFilter];
+    setTextContent(requiredElement<HTMLElement>("#task-hub-heading"), laneContent.title);
     setTextContent(
       requiredElement<HTMLElement>("#task-board-view-title"),
       laneContent.title,
@@ -1144,6 +1155,7 @@ export class TasksController {
       this.#coordinationInbox?.select(taskId);
       requiredElement<HTMLElement>("#task-hub-list-pane").hidden = false;
       setTaskWorkbenchSelection(taskId);
+      this.#panels.showTask(taskId);
       const detailPane = requiredElement<HTMLElement>("#task-detail-pane");
       detailPane.hidden = false;
       setTaskDetailLoading(document, "loading");

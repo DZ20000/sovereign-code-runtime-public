@@ -29,6 +29,9 @@ export async function verifyTaskWorkbench(window: BrowserWindow): Promise<Readon
       ...(type === "mouseMoved" ? {} : { clickCount: 1 }),
     });
   const click = async (selector: string): Promise<void> => {
+    const collapsedFilter = await evaluate<boolean>("(() => { const element=document.querySelector(" + JSON.stringify(selector)
+      + "); return element instanceof HTMLElement && !element.checkVisibility() && element.closest('details.v2-task-more-filters')?.open === false; })()");
+    if (collapsedFilter) await click("details.v2-task-more-filters > summary");
     const position = await point(selector);
     await mouse("mouseMoved", position);
     await mouse("mousePressed", position, 1);
@@ -97,20 +100,24 @@ export async function verifyTaskWorkbench(window: BrowserWindow): Promise<Readon
         messageHeight: message.getBoundingClientRect().height, scrollable: ['auto', 'scroll'].includes(getComputedStyle(grid).overflowY),
         selected: document.querySelector(${JSON.stringify(HUB)})?.getAttribute('aria-current') === 'true' };
     })()`);
-    requireCheck("parallelPanes", paneGeometry.visible && paneGeometry.listWidth >= 300 && paneGeometry.gap >= -1 &&
+    requireCheck("parallelPanes", paneGeometry.visible && paneGeometry.listWidth >= 208 && paneGeometry.gap >= -1 &&
       paneGeometry.messageHeight >= 120 && paneGeometry.scrollable && paneGeometry.selected, paneGeometry);
-    const beforePopover = await geometry();
-    await click("#task-steps-toggle");
-    requireCheck("stepsPopover", await waitFor("document.querySelector('#task-steps-popover')?.matches(':popover-open') && document.querySelectorAll('#task-detail-steps .task-step').length === 4"));
-    const afterPopover = await geometry();
-    requireCheck("stepsDoNotMoveConversation", Object.keys(beforePopover).every(key => Math.abs(beforePopover[key]! - afterPopover[key]!) < 1), { beforePopover, afterPopover });
+    const beforeTabs = await geometry();
+    await click("#task-tab-steps");
+    requireCheck("inlineStepsTab", await waitFor("document.querySelector('#task-panel-steps')?.checkVisibility() && document.querySelector('#task-panel-conversation')?.hidden && document.querySelectorAll('#task-detail-steps .task-step').length === 4"));
     requireCheck("stepCount", await evaluate("document.querySelector('#task-detail-step-count')?.textContent?.trim() === '2 / 4'"));
+    await click("#task-steps-message");
+    requireCheck("stepsReturnToComposer", await waitFor("document.querySelector('#task-panel-conversation')?.checkVisibility() && document.activeElement?.id === 'task-message-input'"));
+    const afterTabs = await geometry();
+    requireCheck("tabsPreserveConversationPosition", Object.keys(beforeTabs).every(key => Math.abs(beforeTabs[key]! - afterTabs[key]!) < 1), { beforeTabs, afterTabs });
+    await click("#task-info-toggle");
+    requireCheck("detailsPopover", await waitFor("document.querySelector('#task-info-popover')?.matches(':popover-open')"));
     await key("Escape");
-    requireCheck("escapeClosesOnlyPopover", await waitFor("!document.querySelector('#task-steps-popover')?.matches(':popover-open') && document.querySelector('#task-detail-pane')?.hidden === false && document.querySelector('.task-hub-shell')?.dataset.taskSelected === 'true'"));
-    await click("#task-steps-toggle");
-    requireCheck("stepsReopened", await waitFor("document.querySelector('#task-steps-popover')?.matches(':popover-open')"));
+    requireCheck("escapeClosesOnlyPopover", await waitFor("!document.querySelector('#task-info-popover')?.matches(':popover-open') && document.querySelector('#task-detail-pane')?.hidden === false && document.querySelector('.task-hub-shell')?.dataset.taskSelected === 'true'"));
+    await click("#task-info-toggle");
+    requireCheck("detailsReopened", await waitFor("document.querySelector('#task-info-popover')?.matches(':popover-open')"));
     await click("#task-detail-title");
-    requireCheck("outsideClosesPopover", await waitFor("!document.querySelector('#task-steps-popover')?.matches(':popover-open') && document.querySelector('#task-detail-pane')?.hidden === false"));
+    requireCheck("outsideClosesPopover", await waitFor("!document.querySelector('#task-info-popover')?.matches(':popover-open') && document.querySelector('#task-detail-pane')?.hidden === false"));
 
     await draft("Workbench draft stays with this task.");
     await click(RELEASE);

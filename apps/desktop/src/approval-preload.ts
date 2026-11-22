@@ -8,6 +8,7 @@ import {
 } from "./shared.js";
 
 const api: SovereignApprovalApi = {
+  dismiss: (returnToCenter = false) => ipcRenderer.invoke(IPC_CHANNELS.approvalDismiss, returnToCenter) as Promise<void>,
   getCurrent: () =>
     ipcRenderer.invoke(IPC_CHANNELS.approvalGetCurrent) as Promise<DesktopApprovalView | null>,
   resolve: (requestId: string, decision: DesktopApprovalDecision) =>
