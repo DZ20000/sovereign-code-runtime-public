@@ -231,8 +231,41 @@ export async function verifyWorkbenchInteractions(
       await evaluate<number>("window.sovereign.invokeTool('visual.fixture.browser-operation-count', {})") === browserOperationsBefore);
     await activateView(window, "computer");
     check("computerCaptureReady", await waitFor("(() => { const button=document.querySelector('#computer-empty-state:not([hidden]) #computer-observe-empty, #computer-observe:not([hidden])'); return button?.checkVisibility() && !button.disabled; })()"));
+    const computerObserveCountBefore = await evaluate<number>("window.sovereign.invokeTool('visual.fixture.computer-observe-count', {})");
+    await evaluate(`(() => {
+      const probe = { events: [], handler: null };
+      probe.handler = event => {
+        const target = event.target instanceof Element ? event.target : null;
+        const hit = document.elementFromPoint(event.clientX, event.clientY);
+        probe.events.push({ type: event.type, trusted: event.isTrusted, target: target?.id || target?.tagName,
+          button: target?.closest('button')?.id, x: event.clientX, y: event.clientY,
+          hit: hit?.id || hit?.tagName, disabled: target?.closest('button')?.disabled });
+        if (probe.events.length > 12) probe.events.shift();
+      };
+      window.__visualComputerPointerProbe = probe;
+      for (const type of ['mousedown', 'mouseup', 'click']) document.addEventListener(type, probe.handler, true);
+    })()`);
     await click("#computer-empty-state:not([hidden]) #computer-observe-empty, #computer-observe:not([hidden])");
-    check("computerWindowsObserved", await waitFor("document.querySelector('#computer-window-list button') !== null"));
+    const computerWindowsObserved = await waitFor("document.querySelector('#computer-window-list button') !== null");
+    const computerObservationEvidence = await evaluate(`(() => {
+      const probe = window.__visualComputerPointerProbe;
+      for (const type of ['mousedown', 'mouseup', 'click']) document.removeEventListener(type, probe.handler, true);
+      delete window.__visualComputerPointerProbe;
+      const buttons = ['computer-observe-empty', 'computer-observe'].map(id => {
+        const button = document.getElementById(id), rect = button.getBoundingClientRect();
+        return { id, visible: button.checkVisibility(), disabled: button.disabled,
+          text: button.textContent, rect: {x:rect.x,y:rect.y,width:rect.width,height:rect.height} };
+      });
+      return { events: probe.events, buttons, windowCount: document.querySelectorAll('#computer-window-list button').length,
+        capability: document.querySelector('#computer-capability').textContent,
+        workspaceVisible: document.querySelector('#computer-workspace').checkVisibility(),
+        emptyVisible: document.querySelector('#computer-empty-state').checkVisibility() };
+    })()`);
+    const computerObserveCountAfter = await evaluate<number>("window.sovereign.invokeTool('visual.fixture.computer-observe-count', {})");
+    check("computerCaptureDispatchedOnce", computerObserveCountAfter === computerObserveCountBefore + 1,
+      { before: computerObserveCountBefore, after: computerObserveCountAfter, state: computerObservationEvidence });
+    check("computerWindowsObserved", computerWindowsObserved,
+      { before: computerObserveCountBefore, after: computerObserveCountAfter, state: computerObservationEvidence });
     check("computerFixturePreviewDecoded", await waitFor("document.querySelector('#computer-preview').complete && document.querySelector('#computer-preview').naturalWidth > 0"));
     await click("#computer-window-list button");
     check("computerWindowPressedState", await evaluate("document.querySelector('#computer-window-list button[aria-pressed=true]') !== null"));

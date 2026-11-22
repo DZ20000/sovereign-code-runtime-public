@@ -158,8 +158,10 @@ export async function captureV2VisualMatrix<T>(
       await activateVisualView(window, view);
       if (view === "computer") {
         await waitForVisualState(window, "(() => { const button=document.querySelector('#computer-empty-state:not([hidden]) #computer-observe-empty, #computer-observe:not([hidden])'); return button?.checkVisibility() && !button.disabled; })()", "fixture desktop capture available");
+        const captureCount = await window.webContents.executeJavaScript("window.sovereign.invokeTool('visual.fixture.computer-observe-count', {})", true) as number;
         await clickNativeVisualControl(window, "#computer-empty-state:not([hidden]) #computer-observe-empty, #computer-observe:not([hidden])");
         try {
+          await waitForVisualState(window, "(async () => await window.sovereign.invokeTool('visual.fixture.computer-observe-count', {}) === " + (captureCount + 1) + ")()", "one fresh fixture desktop capture");
           await waitForVisualState(window, "document.querySelector('#computer-workspace').checkVisibility() && document.querySelector('#computer-window-list button') !== null && document.querySelector('#computer-preview').complete && document.querySelector('#computer-preview').naturalWidth > 0", "captured fixture desktop");
         } catch {
           const state = await window.webContents.executeJavaScript("(async()=>({calls:await window.sovereign.invokeTool('visual.fixture.computer-observe-count',{}),revision:document.querySelector('#computer-revision')?.textContent,windows:document.querySelectorAll('#computer-window-list button').length,image:{complete:document.querySelector('#computer-preview').complete,width:document.querySelector('#computer-preview').naturalWidth},feedback:document.querySelector('#toast').textContent}))()",true);
