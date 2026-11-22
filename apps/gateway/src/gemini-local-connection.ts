@@ -27,6 +27,11 @@ $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $inputText=[Console]::In.ReadToEnd()
 [Console]::Error.WriteLine('SCR_DPAPI_STAGE:read')
+# Use only the built-in modules; hosted machines can have a large third-party inventory.
+$PSModuleAutoLoadingPreference='None'
+$env:PSModulePath=[IO.Path]::Combine($PSHOME,'Modules')
+Import-Module ([IO.Path]::Combine($env:PSModulePath,'Microsoft.PowerShell.Utility','Microsoft.PowerShell.Utility.psd1'))
+Import-Module ([IO.Path]::Combine($env:PSModulePath,'Microsoft.PowerShell.Security','Microsoft.PowerShell.Security.psd1'))
 $inputValue=$inputText|ConvertFrom-Json
 [Console]::Error.WriteLine('SCR_DPAPI_STAGE:parsed')
 if($inputValue.mode -eq 'protect'){
@@ -39,7 +44,12 @@ if($inputValue.mode -eq 'protect'){
 [Console]::Error.WriteLine('SCR_DPAPI_STAGE:written')
 `, "utf16le").toString("base64");
 
-function transformSecret(mode: "protect" | "restore", value: string, environment: NodeJS.ProcessEnv): Promise<string> {
+function assertNotAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new Error("Local Gemini connection update was cancelled.");
+}
+
+function transformSecret(mode: "protect" | "restore", value: string, environment: NodeJS.ProcessEnv, signal?: AbortSignal): Promise<string> {
+  assertNotAborted(signal);
   return new Promise((resolve, reject) => {
     const executable = join(environment.SystemRoot ?? environment.WINDIR ?? "C:\\Windows",
       "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
@@ -58,6 +68,7 @@ function transformSecret(mode: "protect" | "restore", value: string, environment
       if (settled) return;
       settled = true;
       clearTimeout(deadline);
+      signal?.removeEventListener("abort", onAbort);
       if (child.exitCode === null && child.signalCode === null) {
         try { child.kill(); } catch { /* Preserve the bounded, credential-free failure. */ }
       }
@@ -66,6 +77,7 @@ function transformSecret(mode: "protect" | "restore", value: string, environment
       child.stderr.destroy();
       reject(new Error("Local Gemini connection " + mode + " failed (" + reason + "; stage " + stage + ")."));
     };
+    const onAbort = () => fail("cancelled");
     const deadline = setTimeout(() => fail("timed out after 20000 ms"), 20_000);
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
       outputBytes += Buffer.byteLength(chunk, "utf8");
@@ -102,41 +114,54 @@ function transformSecret(mode: "protect" | "restore", value: string, environment
       if (code !== 0 || !output.trim()) return fail("exit " + String(code));
       settled = true;
       clearTimeout(deadline);
+      signal?.removeEventListener("abort", onAbort);
       resolve(output.trim());
     });
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) return onAbort();
     child.stdin.end(JSON.stringify({ mode, value }));
   });
 }
 
-export async function readRegisteredGeminiConnection(environment = process.env) {
+export async function readRegisteredGeminiConnection(environment = process.env, signal?: AbortSignal) {
+  assertNotAborted(signal);
   const path = pairingPath(environment);
   if (process.platform !== "win32" || !path) return null;
   let protectedValue: string;
-  try { protectedValue = await readFile(path, "utf8"); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return null; throw error; }
-  return parseGeminiLocalConnection(JSON.parse(await transformSecret("restore", protectedValue.trim(), environment)));
+  try { protectedValue = await readFile(path, { encoding: "utf8", ...(signal ? { signal } : {}) }); }
+  catch (error) { assertNotAborted(signal); if ((error as NodeJS.ErrnoException).code === "ENOENT") return null; throw error; }
+  const restored = await transformSecret("restore", protectedValue.trim(), environment, signal);
+  assertNotAborted(signal);
+  return parseGeminiLocalConnection(JSON.parse(restored));
 }
 
 /** Register a connection explicitly; credentials remain protected by the current Windows account. */
-export async function registerGeminiLocalConnection(value: unknown, environment = process.env) {
+export async function registerGeminiLocalConnection(value: unknown, environment = process.env, signal?: AbortSignal) {
+  assertNotAborted(signal);
   const connection = parseGeminiLocalConnection(value);
   const path = pairingPath(environment);
   if (process.platform !== "win32" || !path) throw new Error("Protected Gemini pairing requires Windows LOCALAPPDATA.");
-  const protectedValue = await transformSecret("protect", JSON.stringify(connection), environment);
+  const protectedValue = await transformSecret("protect", JSON.stringify(connection), environment, signal);
+  assertNotAborted(signal);
   await mkdir(dirname(path), { recursive: true });
+  assertNotAborted(signal);
   const temporary = join(dirname(path), `.gemini-connection-${randomUUID()}.tmp`);
-  try { await writeFile(temporary, protectedValue, { encoding: "ascii", flag: "wx" }); await rename(temporary, path); }
+  try {
+    await writeFile(temporary, protectedValue, { encoding: "ascii", flag: "wx", ...(signal ? { signal } : {}) });
+    assertNotAborted(signal);
+    await rename(temporary, path);
+  }
   finally { await unlink(temporary).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; }); }
   return connection;
 }
 
 /** An owner-initiated Gateway update may refresh only an existing local pairing. */
-export async function refreshRegisteredGeminiConnection(endpoint: string, bearerToken: string, environment = process.env) {
-  const previous = await readRegisteredGeminiConnection(environment);
+export async function refreshRegisteredGeminiConnection(endpoint: string, bearerToken: string, environment = process.env, signal?: AbortSignal) {
+  const previous = await readRegisteredGeminiConnection(environment, signal);
   if (!previous) return false;
   const connection = parseGeminiLocalConnection({ ...previous, transport: { ...previous.transport, url: endpoint,
     headers: { Authorization: `Bearer ${bearerToken}` } } });
   if (JSON.stringify(previous) === JSON.stringify(connection)) return false;
-  await registerGeminiLocalConnection(connection, environment);
+  await registerGeminiLocalConnection(connection, environment, signal);
   return true;
 }

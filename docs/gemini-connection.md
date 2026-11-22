@@ -47,7 +47,11 @@ The process listens only on `127.0.0.1`. Configure your own HTTPS proxy and OAut
 
 ## Updates and request identity
 
-A runtime owner can publish an updated endpoint and bearer credential through the exported `refreshRegisteredGeminiConnection` function. This function changes only an existing pairing. The bridge reloads a registered connection when its local gateway becomes unavailable or rejects the old credential.
+The normal packaged application refreshes an existing local pairing when its authoritative Gateway starts or changes credentials. During a runtime cutover, the promoted owner publishes its connection; if the cutover is rolled back, the restored owner publishes the previous connection again. The bridge reloads the pairing when its local gateway becomes unavailable or rejects the old credential.
+
+This never creates a pairing automatically. Development builds, custom data directories, smoke tests, benchmarks and update preflight runs do not publish to the account-wide pairing. For these isolated environments, supply an explicit connection bundle for the intended Gateway.
+
+A trusted runtime owner can also call the exported `refreshRegisteredGeminiConnection` helper. The packaged owner uses a bounded, cancellable update; cancellation is checked before committing the encrypted file. Refresh failures emit a fixed warning without credentials and do not stop the Gateway.
 
 The bridge binds external session references to the authenticated OAuth client. It removes downstream host-correlation metadata before forwarding tool calls. A local connection change can initialize a new upstream transport while retaining the external session reference.
 

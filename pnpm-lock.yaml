@@ -160,6 +160,9 @@ importers:
       '@sovereign/control-plane-contract':
         specifier: workspace:*
         version: link:../../packages/control-plane-contract
+      '@sovereign/gateway':
+        specifier: workspace:*
+        version: link:../gateway
       '@sovereign/runtime-core':
         specifier: workspace:*
         version: link:../../packages/runtime-core

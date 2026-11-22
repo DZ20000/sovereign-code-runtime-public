@@ -8,6 +8,8 @@ This synchronization starts from the existing public main revision c7191bb. Chan
 
 The release adds bounded PNG/JPEG/WebP reading and native MCP image content, an optional authenticated Gemini connection, conversation correlation across transports, shared paging and write-audit logic, and schemas derived from the validated Zod inputs. It removes 34 unused update prototypes while preserving the four update modules actually consumed by desktop packaging and verification.
 
+Protected Gemini pairing uses explicit Windows built-in modules, bounded child processes and fixed diagnostics that omit credentials. The normal packaged runtime refreshes only an existing pairing; passive candidates, development builds and isolated test/preflight/custom-data runs cannot publish it. Promotion and rollback follow the existing owner transition, and a cancelled update cannot continue as a detached background write.
+
 Workspace instructions and skills are exposed through bounded read-only discovery using existing workspace capabilities, path guards and connection reach. Text and image reads share the same bounded opened-handle reader. The Git push hook clears inherited repository-local environment variables before validation so temporary test repositories cannot alter the checkout being pushed.
 
 Personal configuration, workstation bindings, local user-data directories, credentials, audit logs, private integrations, source attachments and unrelated project content are excluded. Production builds omit development workspace paths and remap Rust source paths before stripping release symbols.
@@ -34,7 +36,7 @@ Node 24.22.1 is bundled. Its Windows x64 binary was matched to the official rele
 
 ## Publication gates
 
-The main branch requires a reviewed pull request with source, Android, dependency-audit and CodeQL checks. Release tags must match the committed product version and refer to a commit already in main. The release workflow verifies successful source checks for that exact commit, rebuilds on Windows, runs isolated portable and guardian smoke checks, scans the archive, and publishes only the ZIP and its checksum.
+The main branch requires a pull request with source, Android, dependency-audit and CodeQL checks. Release tags must match the committed product version and refer to a commit already in main. The release workflow verifies successful source checks for that exact commit, rebuilds on Windows, runs isolated portable and guardian smoke checks, scans the archive, and publishes only the ZIP and its checksum.
 
 Check the release commit and GitHub Checks together with the archive manifest when reproducing this review. Source tests and package tests use isolated state; building or publishing a download does not install it or restart an existing runtime.
 

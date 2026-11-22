@@ -1,12 +1,12 @@
 # Sovereign Code Runtime
 
-For a standalone Windows x64 download, see [Windows Portable installation](docs/windows-portable.md).
+**Windows x64 Portable (Preview):** [Release status and downloads](https://github.com/DZ20000/sovereign-code-runtime-public/releases/latest) · [Installation and verification](docs/windows-portable.md).
 
 **Durable local work for ephemeral AI agents.**
 
 [![Windows source checks](https://github.com/DZ20000/sovereign-code-runtime-public/actions/workflows/source-check.yml/badge.svg)](https://github.com/DZ20000/sovereign-code-runtime-public/actions/workflows/source-check.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-![Status: Source Preview](https://img.shields.io/badge/status-source%20preview-orange)
+![Status: Preview](https://img.shields.io/badge/status-preview-orange)
 
 AI conversations disconnect, expire, and get replaced. Your local work should not.
 
@@ -14,7 +14,7 @@ Sovereign keeps **Tasks, Agent ownership, permissions, messages, execution state
 
 **[中文说明](README.zh-CN.md)** · **[Run the continuity demo](#run-the-continuity-demo)** · **[Architecture](docs/architecture.md)** · **[Security](SECURITY.md)** · **[Contributing](CONTRIBUTING.md)**
 
-> **Source preview.** This repository publishes source code, not an announced binary release or proof of an installed system. Source CI does not certify native desktop behavior, and the full dependency-audit job may remain red for documented unresolved build dependencies. Read [Security](SECURITY.md), the [threat model](docs/threat-model.md), and [dependency security](docs/dependency-security.md), and see [release evidence](#release-evidence-and-boundaries) before treating a build as deployed.
+> **Preview.** A Portable build is available to download when its release lists both the Windows x64 ZIP and matching SHA-256 file. Source CI and isolated package smoke tests do not prove installation or behavior on your computer. Read [Security](SECURITY.md), the [threat model](docs/threat-model.md), [dependency security](docs/dependency-security.md), and [release evidence](#release-evidence-and-boundaries) for the checks performed and known limitations.
 
 ChatGPT Web is one supported connection path. **Sovereign Code Runtime is an independent open-source project and is not affiliated with, endorsed by, or sponsored by OpenAI.** OpenAI and ChatGPT are trademarks of their respective owners.
 
@@ -186,7 +186,7 @@ Implemented source paths include the Tauri/WebView2 shell, Node Runtime Host, MC
 
 Important boundaries remain:
 
-- this repository is still presented as a source preview rather than an announced public binary release;
+- Windows x64 Portable remains at preview maturity; published release assets identify the builds available for download;
 - full application restart does not yet provide general interrupted-task replay;
 - there is no offline remote task queue or pre-login Windows service;
 - ordinary Terminal and Python execution are not OS-isolated;

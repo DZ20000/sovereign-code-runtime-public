@@ -16,6 +16,7 @@
   "dependencies": {
     "@sovereign/control-plane": "workspace:*",
     "@sovereign/control-plane-contract": "workspace:*",
+    "@sovereign/gateway": "workspace:*",
     "@sovereign/runtime-core": "workspace:*"
   },
   "devDependencies": {

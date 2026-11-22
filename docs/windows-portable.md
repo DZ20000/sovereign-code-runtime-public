@@ -4,10 +4,12 @@ This package runs Sovereign Code Runtime on Windows 10/11 x64. It contains the d
 
 ## Download and verify
 
-Download both files from the same GitHub Release:
+Check [GitHub Releases — latest](https://github.com/DZ20000/sovereign-code-runtime-public/releases/latest) for Windows x64 Portable availability. Once a release lists both files below, download them from that release's **Assets** section:
 
 - SovereignCodeRuntime-VERSION-windows-x64.zip
 - SovereignCodeRuntime-VERSION-windows-x64.zip.sha256
+
+If no release or matching assets are listed yet, use the [source build instructions](../README.md#desktop-application) until publication.
 
 The automatically generated GitHub "Source code" archives are source snapshots, not the runnable application.
 

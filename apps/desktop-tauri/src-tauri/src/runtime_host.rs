@@ -3,7 +3,7 @@ use std::{
     fs::File,
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    process::{Child, ChildStdin, Command, Stdio},
+    process::{Child, ChildStdin},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc, Arc, Mutex,
@@ -22,6 +22,7 @@ use tauri_plugin_dialog::{
 
 use crate::dpapi;
 
+mod launch_environment;
 pub(crate) mod lifecycle;
 
 const PROTOCOL_VERSION: u64 = 1;
@@ -146,6 +147,7 @@ struct RuntimeHostLaunchOptions {
     runtime_script_sha256: String,
     native_agent: PathBuf,
     migrate_legacy_data: bool,
+    publish_registered_connection: bool,
 }
 
 fn secure_tunnel_placeholder() -> Value {
@@ -863,6 +865,10 @@ impl RuntimeHost {
             runtime_script_sha256,
             native_agent,
             migrate_legacy_data: explicit_user_data.is_none(),
+            publish_registered_connection: launch_environment::registered_connection_owner_eligible(
+                cfg!(debug_assertions),
+                std::env::vars_os().map(|(name, _)| name),
+            ),
         })
     }
 
@@ -900,41 +906,7 @@ impl RuntimeHost {
         std::fs::create_dir_all(&options.user_data)
             .map_err(|error| format!("Could not create Tauri app data directory: {error}"))?;
 
-        let mut command = Command::new(&options.node_executable);
-        command
-            .arg(&options.runtime_script)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .env("SCR_CONTROL_SESSION_SECRET", &options.session)
-            .env("SCR_CONTROL_USER_DATA_PATH", &options.user_data)
-            .env("SCR_CONTROL_NATIVE_AGENT_PATH", &options.native_agent)
-            .env("SCR_CONTROL_PARENT_PID", std::process::id().to_string())
-            .env(
-                "SCR_RUNTIME_GATEWAY_BEARER_TOKEN",
-                &options.gateway_bearer_token,
-            )
-            .env("SCR_RUNTIME_INSTANCE_ID", &options.instance_id)
-            .env("SCR_RUNTIME_RELEASE_ID", &options.release_id)
-            .env("SCR_RUNTIME_CUTOVER_ROLE", options.role);
-        if let Some(promotion_fencing_token) = options.promotion_fencing_token.as_ref() {
-            command.env(
-                "SCR_RUNTIME_PROMOTION_FENCING_TOKEN",
-                promotion_fencing_token,
-            );
-        }
-        if let Some(environment_workspace_root) = options.environment_workspace_root.as_ref() {
-            command.env("SCR_WORKSPACE_ROOT", environment_workspace_root);
-        }
-        #[cfg(debug_assertions)]
-        if options.environment_workspace_root.is_none() {
-            command.env("SCR_WORKSPACE_ROOT", &options.workspace_root);
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            command.creation_flags(0x08000000);
-        }
+        let mut command = launch_environment::command(&options);
         let mut child = command
             .spawn()
             .map_err(|error| format!("Could not start Node Runtime Host: {error}"))?;

@@ -172,6 +172,11 @@ export interface ControlPlaneControllerOptions {
   readonly passiveCutoverCandidate?: boolean;
   /** Trusted local supervisor injection used to preserve existing MCP credentials. */
   readonly gatewayBearerToken?: string;
+  /** Supplied only by an eligible product owner; isolated controllers publish nothing. */
+  readonly onAuthoritativeGatewayConnection?: (
+    endpoint: string,
+    bearerToken: string,
+  ) => Promise<void>;
 }
 
 export interface ControlPlaneConnectionBundle {
@@ -293,6 +298,8 @@ export class ControlPlaneController {
   readonly #activeActivityCountByTask = new Map<string, number>();
   #passiveCutoverCandidate: boolean;
   #gatewayBearerToken: string | null;
+  readonly #onAuthoritativeGatewayConnection:
+    ControlPlaneControllerOptions["onAuthoritativeGatewayConnection"];
   #cutoverDetachedCheckpointId: string | null = null;
   #cutoverDetachedRouteDesired = false;
   #promotedCutoverCheckpointId: string | null = null;
@@ -325,6 +332,7 @@ export class ControlPlaneController {
 
   constructor(options: ControlPlaneControllerOptions) {
     this.#passiveCutoverCandidate = options.passiveCutoverCandidate === true;
+    this.#onAuthoritativeGatewayConnection = options.onAuthoritativeGatewayConnection;
     this.#gatewayBearerToken =
       options.gatewayBearerToken === undefined
         ? null
@@ -2481,6 +2489,7 @@ export class ControlPlaneController {
       }
       this.#cutoverDetachedCheckpointId = null;
       this.#cutoverDetachedRouteDesired = false;
+      await this.#publishGatewayConnection();
     } catch (error) {
       throw new RuntimeError(
         "PROCESS_FAILED",
@@ -2528,7 +2537,7 @@ export class ControlPlaneController {
     try {
       const state = this.state();
       if (state.workspaceRoot !== null && state.phase !== "running") {
-        await this.#startNow();
+        await this.#startNow(false);
       }
       if (externalRouteDesired) {
         if (this.#routingEnabled()) {
@@ -2537,6 +2546,7 @@ export class ControlPlaneController {
           await this.#startConfiguredTunnel(false, true);
         }
       }
+      await this.#publishGatewayConnection();
     } catch (error) {
       this.#passiveCutoverCandidate = true;
       this.#promotedCutoverCheckpointId = null;
@@ -2593,7 +2603,23 @@ export class ControlPlaneController {
       promotedCheckpointId: this.#promotedCutoverCheckpointId,
     };
   }
-  async #startNow(): Promise<void> {
+  async #publishGatewayConnection(): Promise<void> {
+    if (
+      this.#passiveCutoverCandidate || this.#runtime === null ||
+      this.#bearerToken === null || this.#onAuthoritativeGatewayConnection === undefined
+    ) {
+      return;
+    }
+    try {
+      await this.#onAuthoritativeGatewayConnection(
+        this.#runtime.endpoint, this.#bearerToken,
+      );
+    } catch {
+      console.warn("The existing Gemini local pairing could not follow the current Gateway connection.");
+    }
+  }
+
+  async #startNow(publishConnection = true): Promise<void> {
     if (this.#runtime !== null) {
       this.#phase = "running";
       this.#errorMessage = null;
@@ -2672,6 +2698,7 @@ export class ControlPlaneController {
       this.#credentialGeneration += 1;
       this.#phase = "running";
       this.#errorMessage = await this.#projectWorkspaces.restoreRuntimeSelection(runtime);
+      if (publishConnection) await this.#publishGatewayConnection();
     } catch (error) {
       this.#bearerToken = null;
       this.#runtime = null;

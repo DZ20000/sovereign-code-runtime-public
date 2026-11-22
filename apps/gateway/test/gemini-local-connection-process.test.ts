@@ -36,7 +36,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   try {
-    // A failed transform must not create even the isolated LOCALAPPDATA directory.
+    // A failed or cancelled registration must not create even the isolated LOCALAPPDATA directory.
     expect(await readdir(root)).toEqual([]);
   } finally {
     child.stdin.destroy();
@@ -48,12 +48,12 @@ afterEach(async () => {
   }
 });
 
-function beginRegistration(): Promise<unknown> {
+function beginRegistration(signal?: AbortSignal): Promise<unknown> {
   // Exercise the Windows-only public API on every test platform without a real child.
   const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
   Object.defineProperty(process, "platform", { value: "win32" });
   try {
-    return registerGeminiLocalConnection(connection, { LOCALAPPDATA: join(root, "local-app-data") })
+    return registerGeminiLocalConnection(connection, { LOCALAPPDATA: join(root, "local-app-data") }, signal)
       .catch((error: unknown) => error);
   } finally {
     Object.defineProperty(process, "platform", platform);
@@ -128,4 +128,29 @@ it("still releases pipes and rejects safely when killing the child throws", asyn
   const result = beginRegistration();
   child.stdin.emit("error", new Error(`input diagnostic: ${fixtureSecret}`));
   await expectFailure(result, "input pipe failed");
+});
+
+it("cancels a stalled protection process without disclosing the abort reason", async () => {
+  const controller = new AbortController();
+  const result = beginRegistration(controller.signal);
+  controller.abort(new Error(`abort diagnostic: ${fixtureSecret}`));
+  await expectFailure(result, "cancelled");
+});
+
+it("cancels before any pairing write when protection completes just before abort", async () => {
+  const controller = new AbortController();
+  const result = beginRegistration(controller.signal);
+  child.stdout.write("protected-fixture-value");
+  child.exitCode = 0;
+  child.emit("close", 0);
+  // Abort in the same turn, before register can continue after its transform await.
+  controller.abort(new Error(`abort diagnostic: ${fixtureSecret}`));
+
+  const failure = await result;
+  expect(failure).toBeInstanceOf(Error);
+  expect(failure).toHaveProperty("message", "Local Gemini connection update was cancelled.");
+  expect(String(failure)).not.toContain(fixtureSecret);
+  expect(spawn).toHaveBeenCalledTimes(1);
+  expect(child.kill).not.toHaveBeenCalled();
+  expect(vi.getTimerCount()).toBe(0);
 });
