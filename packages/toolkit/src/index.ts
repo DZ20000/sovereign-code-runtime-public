@@ -24,6 +24,8 @@ import {
   canonicalJson,
 } from "@sovereign/runtime-core";
 import { WindowsAdapter } from "@sovereign/windows-adapter";
+import { createWorkspaceInstructionTools, type BuiltinToolOptions } from "./workspace-instructions.js";
+export type { BuiltinToolOptions } from "./workspace-instructions.js";
 import { defineTool, objectSchema, type RuntimeToolDefinition } from "./tool-definition.js";
 export { defineTool, objectSchema, type RuntimeToolDefinition } from "./tool-definition.js";
 import {
@@ -399,8 +401,12 @@ const computerAction = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("launch_application"), path: requiredRelativePath }).strict(),
 ]);
 
-export function createBuiltinTools(adapter: WindowsAdapter): readonly RuntimeToolDefinition[] {
+export function createBuiltinTools(
+  adapter: WindowsAdapter,
+  options: BuiltinToolOptions = {},
+): readonly RuntimeToolDefinition[] {
   return [
+    ...createWorkspaceInstructionTools(adapter, options),
     defineTool(
       {
         name: "system.info",

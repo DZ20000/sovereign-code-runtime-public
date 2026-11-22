@@ -13,4 +13,9 @@ fi
 root=$(git rev-parse --show-toplevel)
 cd "$root"
 
+# Tests create separate Git repositories. Do not let inherited hook variables
+# redirect their Git operations into the repository being pushed.
+# See https://git-scm.com/docs/githooks#_description.
+unset $(git rev-parse --local-env-vars)
+
 exec pnpm verify:push

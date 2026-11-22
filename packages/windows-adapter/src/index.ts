@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
-import { lstat, mkdir, open, readdir, realpath } from "node:fs/promises";
+import { lstat, mkdir, open, opendir, readdir, realpath } from "node:fs/promises";
 import { arch, platform, release } from "node:os";
 import { win32 } from "node:path";
 
@@ -119,6 +119,42 @@ export interface ReadTextResult {
   readonly bytes: number;
   readonly sha256: string;
   readonly content: string;
+}
+
+export const DEFAULT_SKILL_ROOTS = [".agents/skills", ".codex/skills", "skills"] as const;
+
+export interface DiscoveryDiagnostic {
+  readonly path: string;
+  readonly code: string;
+}
+
+export interface WorkspaceInstructionsResult {
+  readonly schemaVersion: "scr.workspace-instructions/v1";
+  readonly workspaceId: string;
+  readonly targetPath: string;
+  readonly directory: string;
+  readonly order: "root-to-leaf";
+  readonly files: Array<ReadTextResult & { readonly appliesTo: string }>;
+  complete: boolean;
+  readonly diagnostics: DiscoveryDiagnostic[];
+}
+
+export interface WorkspaceSkillSummary {
+  readonly name: string;
+  readonly root: string;
+  readonly relativePath: string;
+  readonly bytes: number;
+  readonly sha256: string;
+  readonly preview: { readonly type: "text"; readonly text: string; readonly truncated: boolean };
+}
+
+export interface WorkspaceSkillsResult {
+  readonly schemaVersion: "scr.workspace-skills/v1";
+  readonly workspaceId: string;
+  readonly roots: readonly string[];
+  readonly skills: WorkspaceSkillSummary[];
+  complete: boolean;
+  readonly diagnostics: DiscoveryDiagnostic[];
 }
 
 export interface WriteTextResult {
@@ -429,6 +465,94 @@ function terminalProcess(command: string, timeoutMs: number) {
     command: powershell,
     args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
   };
+}
+
+function discoveryInteger(value: number, minimum: number, maximum: number, name: string): void {
+  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+    throw new RuntimeError("INVALID_INPUT", `${name} must be from ${minimum} through ${maximum}.`, 400);
+  }
+}
+
+function discoveryPath(path: string): string {
+  return path.replaceAll("\\", "/");
+}
+
+function normalizedSkillRoots(roots: readonly string[]): readonly string[] {
+  if (roots.length > 8) {
+    throw new RuntimeError("INVALID_INPUT", "At most eight skill roots may be configured per workspace.", 400);
+  }
+  const unique = new Map<string, string>();
+  for (const root of roots) {
+    const normalized = normalizeWindowsRelativePath(root, true);
+    const key = normalized.toLocaleLowerCase("en-US");
+    if (!unique.has(key)) unique.set(key, normalized);
+  }
+  return [...unique.values()];
+}
+
+function withinSkillRoot(path: string, root: string): boolean {
+  return root.length === 0 || path.toLocaleLowerCase("en-US").startsWith(
+    `${root.toLocaleLowerCase("en-US")}\\`,
+  );
+}
+
+function discoveryFits(result: unknown, maxBytes: number): boolean {
+  return Buffer.byteLength(JSON.stringify(result), "utf8") <= maxBytes;
+}
+
+function discoveryDiagnostic(
+  result: { complete: boolean; readonly diagnostics: DiscoveryDiagnostic[] },
+  path: string,
+  code: string,
+  maxBytes: number,
+): void {
+  result.complete = false;
+  result.diagnostics.push({ path: discoveryPath(path), code });
+  if (!discoveryFits(result, maxBytes)) {
+    throw new RuntimeError("FILE_TOO_LARGE", "Discovery metadata exceeds maxBytes; narrow the request or increase the budget.", 413);
+  }
+}
+
+function discoveryErrorCode(error: unknown): string {
+  if (error instanceof RuntimeError) return error.code;
+  if (isNodeError(error) && error.code === "ENOENT") return "PATH_NOT_FOUND";
+  // Do not expose absolute paths from filesystem error messages.
+  return "READ_FAILED";
+}
+
+async function readBoundedFile(
+  guard: WindowsPathGuard,
+  absolutePath: string,
+  maxBytes: number,
+): Promise<Buffer> {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+    throw new RuntimeError("INVALID_INPUT", "A positive, bounded file read limit is required.", 400);
+  }
+  const handle = await open(absolutePath, "r");
+  try {
+    await guard.assertOpenedRegularFile(absolutePath, handle);
+    const info = await handle.stat();
+    if (info.size > maxBytes) {
+      throw new RuntimeError("FILE_TOO_LARGE", "The file exceeds the configured read limit.", 413, {
+        bytes: info.size, maxBytes,
+      });
+    }
+    // The extra byte also detects growth after stat without an unbounded readFile().
+    const buffer = Buffer.alloc(maxBytes + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const { bytesRead } = await handle.read(buffer, length, buffer.length - length, length);
+      if (bytesRead === 0) break;
+      length += bytesRead;
+    }
+    if (length > maxBytes) {
+      throw new RuntimeError("FILE_TOO_LARGE", "The file exceeds the configured read limit.", 413, { maxBytes });
+    }
+    await guard.assertOpenedRegularFile(absolutePath, handle);
+    return buffer.subarray(0, length);
+  } finally {
+    await handle.close();
+  }
 }
 
 export class WindowsAdapter {
@@ -755,29 +879,207 @@ export class WindowsAdapter {
     maxBytes = this.#maxReadBytes,
   ): Promise<ReadTextResult> {
     this.#require(principal, workspaceId, ["files.read"]);
-    const resolved = await this.#guard(workspaceId).resolve(relativePath, "read");
-    const handle = await open(resolved.absolutePath, "r");
-    try {
-      await this.#guard(workspaceId).assertOpenedRegularFile(resolved.absolutePath, handle);
-      const info = await handle.stat();
-      const boundedMax = Math.max(1, Math.min(maxBytes, this.#maxReadBytes));
-      if (info.size > boundedMax) {
-        throw new RuntimeError("FILE_TOO_LARGE", "The file exceeds the configured read limit.", 413, {
-          bytes: info.size,
-          maxBytes: boundedMax,
-        });
-      }
-      const data = await handle.readFile();
-      return {
-        workspaceId,
-        relativePath: resolved.relativePath,
-        bytes: data.byteLength,
-        sha256: sha256(data),
-        content: data.toString("utf8"),
-      };
-    } finally {
-      await handle.close();
+    const guard = this.#guard(workspaceId);
+    const resolved = await guard.resolve(relativePath, "read");
+    const data = await readBoundedFile(
+      guard, resolved.absolutePath, Math.max(1, Math.min(maxBytes, this.#maxReadBytes)),
+    );
+    return {
+      workspaceId,
+      relativePath: resolved.relativePath,
+      bytes: data.byteLength,
+      sha256: sha256(data),
+      content: data.toString("utf8"),
+    };
+  }
+
+  async workspaceInstructions(
+    principal: Principal,
+    workspaceId: string,
+    relativePath = "",
+    maxFileBytes = 65_536,
+    maxBytes = 262_144,
+  ): Promise<WorkspaceInstructionsResult> {
+    this.#require(principal, workspaceId, ["workspace.read", "files.read"]);
+    discoveryInteger(maxFileBytes, 1, 262_144, "maxFileBytes");
+    discoveryInteger(maxBytes, 8_192, 262_144, "maxBytes");
+    const normalized = normalizeWindowsRelativePath(relativePath, true);
+    if (normalized.split("\\").length > 64) {
+      throw new RuntimeError("INVALID_INPUT", "Instruction discovery supports at most 64 path segments.", 400);
     }
+    const resolved = await this.#guard(workspaceId).resolve(normalized, "read", true);
+    const info = await lstat(resolved.absolutePath);
+    if (!info.isDirectory() && !info.isFile()) {
+      throw new RuntimeError("FILE_NOT_REGULAR", "The instruction target must be a regular file or directory.", 400);
+    }
+    const parent = info.isDirectory() ? resolved.relativePath : win32.dirname(resolved.relativePath);
+    const directory = parent === "." ? "" : parent;
+    const ancestors = [""];
+    for (const segment of directory.length === 0 ? [] : directory.split("\\")) {
+      ancestors.push(win32.join(ancestors.at(-1)!, segment));
+    }
+    const result: WorkspaceInstructionsResult = {
+      schemaVersion: "scr.workspace-instructions/v1",
+      workspaceId,
+      targetPath: discoveryPath(resolved.relativePath),
+      directory: discoveryPath(directory),
+      order: "root-to-leaf",
+      files: [],
+      complete: true,
+      diagnostics: [],
+    };
+    if (!discoveryFits(result, maxBytes)) {
+      throw new RuntimeError("FILE_TOO_LARGE", "Instruction target metadata exceeds maxBytes.", 413);
+    }
+    for (const ancestor of ancestors) {
+      const path = win32.join(ancestor, "AGENTS.md");
+      let read: ReadTextResult;
+      try {
+        read = await this.readTextFile(principal, workspaceId, path, maxFileBytes);
+      } catch (error) {
+        const code = discoveryErrorCode(error);
+        if (code !== "PATH_NOT_FOUND") discoveryDiagnostic(result, path, code, maxBytes);
+        continue;
+      }
+      const document = { ...read, relativePath: discoveryPath(read.relativePath), appliesTo: discoveryPath(ancestor) };
+      if (discoveryFits({ ...result, files: [...result.files, document] }, maxBytes)) {
+        result.files.push(document);
+      } else {
+        discoveryDiagnostic(result, path, "RESPONSE_LIMIT", maxBytes);
+      }
+    }
+    return result;
+  }
+
+  async listWorkspaceSkills(
+    principal: Principal,
+    workspaceId: string,
+    allowedRoots: readonly string[] = DEFAULT_SKILL_ROOTS,
+    root?: string,
+    maxSkills = 50,
+    maxDepth = 3,
+    maxBytes = 65_536,
+  ): Promise<WorkspaceSkillsResult> {
+    this.#require(principal, workspaceId, ["workspace.read", "files.read"]);
+    discoveryInteger(maxSkills, 1, 200, "maxSkills");
+    discoveryInteger(maxDepth, 1, 4, "maxDepth");
+    discoveryInteger(maxBytes, 8_192, 262_144, "maxBytes");
+    const configured = normalizedSkillRoots(allowedRoots);
+    const selected = root === undefined ? undefined : normalizeWindowsRelativePath(root, true);
+    if (selected !== undefined && !configured.some(path => path.toLocaleLowerCase("en-US") === selected.toLocaleLowerCase("en-US"))) {
+      throw new RuntimeError("POLICY_DENIED", "The requested skill root is not configured for this workspace.", 403);
+    }
+    const roots = selected === undefined ? configured : [selected];
+    const result: WorkspaceSkillsResult = {
+      schemaVersion: "scr.workspace-skills/v1", workspaceId,
+      roots: roots.map(discoveryPath), skills: [], complete: true, diagnostics: [],
+    };
+    if (!discoveryFits(result, maxBytes)) {
+      throw new RuntimeError("FILE_TOO_LARGE", "Skill root metadata exceeds maxBytes.", 413);
+    }
+    const guard = this.#guard(workspaceId);
+    const seen = new Set<string>();
+    const queue = roots.map(path => ({ path, root: path, depth: 0 }));
+    let scannedEntries = 0;
+    scan: while (queue.length > 0) {
+      const current = queue.shift()!;
+      let entries: Dirent[];
+      try {
+        const resolved = await guard.resolve(current.path, "read", true);
+        const before = await lstat(resolved.absolutePath);
+        if (!before.isDirectory()) {
+          throw new RuntimeError("PATH_NOT_DIRECTORY", "A configured skill root must be a directory.", 400);
+        }
+        entries = [];
+        for await (const entry of await opendir(resolved.absolutePath)) {
+          scannedEntries += 1;
+          if (scannedEntries > 1_000) {
+            discoveryDiagnostic(result, current.path, "SCAN_LIMIT", maxBytes);
+            break scan;
+          }
+          entries.push(entry);
+        }
+        const checked = await guard.resolve(current.path, "read", true);
+        const after = await lstat(checked.absolutePath);
+        if (checked.absolutePath !== resolved.absolutePath || before.dev !== after.dev || before.ino !== after.ino) {
+          throw new RuntimeError("PATH_CHANGED", "The skill directory changed during discovery.", 409);
+        }
+        entries.sort((left, right) => left.name.localeCompare(right.name));
+      } catch (error) {
+        const code = discoveryErrorCode(error);
+        if (code !== "PATH_NOT_FOUND") discoveryDiagnostic(result, current.path, code, maxBytes);
+        continue;
+      }
+      const children: typeof queue = [];
+      for (const entry of entries) {
+        if (entry.name.toLocaleLowerCase("en-US") === ".git") continue;
+        const path = win32.join(current.path, entry.name);
+        if (entry.isSymbolicLink()) {
+          discoveryDiagnostic(result, path, "PATH_SYMLINK", maxBytes);
+        } else if (entry.isDirectory()) {
+          if (current.depth + 1 < maxDepth) children.push({ path, root: current.root, depth: current.depth + 1 });
+          else discoveryDiagnostic(result, path, "DEPTH_LIMIT", maxBytes);
+        } else if (entry.name.toLocaleLowerCase("en-US") === "skill.md") {
+          const key = path.toLocaleLowerCase("en-US");
+          if (seen.has(key)) continue;
+          seen.add(key);
+          if (result.skills.length >= maxSkills) {
+            discoveryDiagnostic(result, path, "SKILL_LIMIT", maxBytes);
+            break scan;
+          }
+          let read: ReadTextResult;
+          try {
+            read = await this.readTextFile(principal, workspaceId, path, 65_536);
+          } catch (error) {
+            discoveryDiagnostic(result, path, discoveryErrorCode(error), maxBytes);
+            continue;
+          }
+          const characters = Array.from(read.content.trim());
+          const skill: WorkspaceSkillSummary = {
+            name: win32.basename(current.path) || workspaceId,
+            root: discoveryPath(current.root),
+            relativePath: discoveryPath(read.relativePath),
+            bytes: read.bytes, sha256: read.sha256,
+            preview: { type: "text", text: characters.slice(0, 600).join(""), truncated: characters.length > 600 },
+          };
+          if (!discoveryFits({ ...result, skills: [...result.skills, skill] }, maxBytes)) {
+            discoveryDiagnostic(result, path, "RESPONSE_LIMIT", maxBytes);
+            break scan;
+          }
+          result.skills.push(skill);
+        }
+      }
+      // Finish each configured root before the next, including overlapping roots.
+      queue.unshift(...children);
+    }
+    result.skills.sort((left, right) =>
+      result.roots.indexOf(left.root) - result.roots.indexOf(right.root)
+      || left.relativePath.localeCompare(right.relativePath),
+    );
+    return result;
+  }
+
+  async readWorkspaceSkill(
+    principal: Principal,
+    workspaceId: string,
+    relativePath: string,
+    allowedRoots: readonly string[] = DEFAULT_SKILL_ROOTS,
+    maxBytes = 262_144,
+    expectedSha256?: string,
+  ): Promise<ReadTextResult & { readonly schemaVersion: "scr.skill/v1"; readonly root: string }> {
+    this.#require(principal, workspaceId, ["workspace.read", "files.read"]);
+    discoveryInteger(maxBytes, 1, 262_144, "maxBytes");
+    const normalized = normalizeWindowsRelativePath(relativePath);
+    const root = normalizedSkillRoots(allowedRoots).find(candidate => withinSkillRoot(normalized, candidate));
+    if (root === undefined || win32.basename(normalized).toLocaleLowerCase("en-US") !== "skill.md") {
+      throw new RuntimeError("POLICY_DENIED", "Only SKILL.md files beneath configured skill roots may be read by this tool.", 403);
+    }
+    if (expectedSha256 !== undefined) assertSha256(expectedSha256);
+    const read = await this.readTextFile(principal, workspaceId, normalized, maxBytes);
+    if (expectedSha256 !== undefined && !equalSha256(expectedSha256, read.sha256)) {
+      throw new RuntimeError("STALE_HASH", "The skill changed after it was discovered; list or read it again.", 409);
+    }
+    return { ...read, relativePath: discoveryPath(read.relativePath), schemaVersion: "scr.skill/v1", root: discoveryPath(root) };
   }
 
   /**
@@ -803,52 +1105,24 @@ export class WindowsAdapter {
     if (![".png", ".jpg", ".jpeg", ".webp"].includes(extension)) {
       throw new RuntimeError("INVALID_INPUT", "Only PNG, JPEG and WebP images are supported.", 400);
     }
-    const handle = await open(resolved.absolutePath, "r");
-    try {
-      await guard.assertOpenedRegularFile(resolved.absolutePath, handle);
-      const maxImageBytes = 6 * 1024 * 1024;
-      const info = await handle.stat();
-      if (info.size > maxImageBytes) {
-        throw new RuntimeError("FILE_TOO_LARGE", "Image exceeds the image read limit.", 413, {
-          bytes: info.size,
-          maxBytes: maxImageBytes,
-        });
-      }
-      // The extra byte detects a file that grows after stat without an unbounded readFile().
-      const buffer = Buffer.alloc(maxImageBytes + 1);
-      let length = 0;
-      while (length < buffer.length) {
-        const { bytesRead } = await handle.read(buffer, length, buffer.length - length, length);
-        if (bytesRead === 0) break;
-        length += bytesRead;
-      }
-      if (length > maxImageBytes) {
-        throw new RuntimeError("FILE_TOO_LARGE", "Image exceeds the image read limit.", 413, {
-          maxBytes: maxImageBytes,
-        });
-      }
-      await guard.assertOpenedRegularFile(resolved.absolutePath, handle);
-      const data = buffer.subarray(0, length);
-      const png = data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
-      const jpeg = data[0] === 255 && data[1] === 216 && data[2] === 255;
-      const webp = data.toString("ascii", 0, 4) === "RIFF"
-        && data.toString("ascii", 8, 12) === "WEBP";
-      if ((extension === ".png" && !png)
-        || ((extension === ".jpg" || extension === ".jpeg") && !jpeg)
-        || (extension === ".webp" && !webp)) {
-        throw new RuntimeError("INVALID_INPUT", "The file signature does not match its image extension.", 400);
-      }
-      return {
-        workspaceId,
-        relativePath: resolved.relativePath,
-        bytes: data.byteLength,
-        sha256: sha256(data),
-        mimeType: png ? "image/png" : jpeg ? "image/jpeg" : "image/webp",
-        imageBase64: data.toString("base64"),
-      };
-    } finally {
-      await handle.close();
+    const data = await readBoundedFile(guard, resolved.absolutePath, 6 * 1024 * 1024);
+    const png = data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    const jpeg = data[0] === 255 && data[1] === 216 && data[2] === 255;
+    const webp = data.toString("ascii", 0, 4) === "RIFF"
+      && data.toString("ascii", 8, 12) === "WEBP";
+    if ((extension === ".png" && !png)
+      || ((extension === ".jpg" || extension === ".jpeg") && !jpeg)
+      || (extension === ".webp" && !webp)) {
+      throw new RuntimeError("INVALID_INPUT", "The file signature does not match its image extension.", 400);
     }
+    return {
+      workspaceId,
+      relativePath: resolved.relativePath,
+      bytes: data.byteLength,
+      sha256: sha256(data),
+      mimeType: png ? "image/png" : jpeg ? "image/jpeg" : "image/webp",
+      imageBase64: data.toString("base64"),
+    };
   }
 
   async createTextFile(

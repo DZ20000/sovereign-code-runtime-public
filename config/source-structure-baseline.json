@@ -118,12 +118,6 @@
       "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
     },
     {
-      "path": "packages/update-core/src/runtime-supervisor-state.ts",
-      "observedLines": 1263,
-      "maximumLines": 1263,
-      "reason": "Existing oversized module captured when the guard was introduced; extract a cohesive responsibility before adding lines beyond this reviewed ceiling."
-    },
-    {
       "path": "packages/windows-adapter/src/index.ts",
       "observedLines": 3162,
       "maximumLines": 3162,

@@ -75,14 +75,15 @@
     "worktrees:prune:all-clean": "node scripts/worktrees.mjs prune --all-clean",
     "worktree:create": "node scripts/worktrees.mjs create",
     "worktree:finish": "node scripts/worktrees.mjs finish",
-    "verify:push": "pnpm test:products && pnpm test:launchers && pnpm typecheck && pnpm --filter @sovereign/desktop run build:native && pnpm exec vitest run packages apps --reporter=dot && node scripts/source-structure-audit.mjs --root . --check",
+    "verify:push": "pnpm test:products && pnpm test:launchers && pnpm test:git-hooks && pnpm typecheck && pnpm --filter @sovereign/desktop run build:native && pnpm exec vitest run packages apps --reporter=dot && node scripts/source-structure-audit.mjs --root . --check",
     "audit:source-structure": "node scripts/source-structure-audit.mjs --root . --check",
     "performance:lifecycle:check": "node scripts/performance-lifecycle-budget.mjs",
     "products:zh": "node scripts/products.mjs --lang zh-CN",
     "products:open:zh": "node scripts/products.mjs --open --lang zh-CN",
     "demo:continuity": "pnpm build:runtime && node --disable-warning=ExperimentalWarning scripts/demo-continuity.mjs",
     "test:demo-continuity": "pnpm build:runtime && node --disable-warning=ExperimentalWarning --test scripts/demo-continuity.test.mjs",
-    "start:gemini": "node scripts/gemini-gateway-server.mjs"
+    "start:gemini": "node scripts/gemini-gateway-server.mjs",
+    "test:git-hooks": "node --test scripts/git-hooks.test.mjs"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",

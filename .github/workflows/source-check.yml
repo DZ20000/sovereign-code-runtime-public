@@ -46,6 +46,7 @@ jobs:
       - run: pnpm test:demo-continuity
       - run: pnpm test:products
       - run: pnpm test:launchers
+      - run: pnpm test:git-hooks
       - name: Run Vitest suite
         run: pnpm exec vitest run --reporter=dot --exclude tests/integration/desktop-tunnel-routing.test.ts --exclude tests/integration/task-registry-capacity.test.ts
       - name: Run Windows timing-sensitive integration tests serially

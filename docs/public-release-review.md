@@ -8,6 +8,8 @@ This synchronization starts from the existing public main revision c7191bb. Chan
 
 The release adds bounded PNG/JPEG/WebP reading and native MCP image content, an optional authenticated Gemini connection, conversation correlation across transports, shared paging and write-audit logic, and schemas derived from the validated Zod inputs. It removes 34 unused update prototypes while preserving the four update modules actually consumed by desktop packaging and verification.
 
+Workspace instructions and skills are exposed through bounded read-only discovery using existing workspace capabilities, path guards and connection reach. Text and image reads share the same bounded opened-handle reader. The Git push hook clears inherited repository-local environment variables before validation so temporary test repositories cannot alter the checkout being pushed.
+
 Personal configuration, workstation bindings, local user-data directories, credentials, audit logs, private integrations, source attachments and unrelated project content are excluded. Production builds omit development workspace paths and remap Rust source paths before stripping release symbols.
 
 ## Sanitization evidence
@@ -25,6 +27,8 @@ The candidate source and existing public history checks returned zero findings. 
 Complete TypeScript checking, focused file/security/audit/paging/schema/conversation tests, real MCP-to-Gemini image tests, native launcher tests, Rust library and recovery tests, and web/runtime builds were run for the candidate. The maintained source workflow also runs the full Vitest suite, the timing-sensitive integration cases serially, and Android unit tests on Linux.
 
 The JavaScript graph was refreshed to MCP SDK 1.32.0, Zod 4.6.6, Vite 8.2.4, Vitest 4.1.12 and Electron 43.8.1 with scoped transitive fixes. Complete and production pnpm audits both returned zero findings on the review date. Advisory data changes; the release workflow requires current checks for the exact commit.
+
+The extended private-term review of the verified Node binary produced two ordinary upstream Unicode-label matches. Both were reviewed as false positives; the binary and scanner were left unchanged. No actual private content was found.
 
 Node 24.22.1 is bundled. Its Windows x64 binary was matched to the official release checksum; its matching upstream license is included. The Tauri Portable does not include the legacy Electron application.
 
