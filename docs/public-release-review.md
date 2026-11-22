@@ -26,7 +26,7 @@ The candidate source and existing public history checks returned zero findings. 
 
 Complete TypeScript checking, focused file/security/audit/paging/schema/conversation tests, real MCP-to-Gemini image tests, native launcher tests, Rust library and recovery tests, and web/runtime builds were run for the candidate. The maintained source workflow also runs the full Vitest suite, the timing-sensitive integration cases serially, and Android unit tests on Linux.
 
-The JavaScript graph was refreshed to MCP SDK 1.32.0, Zod 4.6.6, Vite 8.2.4, Vitest 4.1.12 and Electron 43.8.1 with scoped transitive fixes. Complete and production pnpm audits both returned zero findings on the review date. Advisory data changes; the release workflow requires current checks for the exact commit.
+The JavaScript graph was refreshed to MCP SDK 1.32.0, Zod 4.6.6, Vite 8.2.4, Vitest 4.1.12 and Electron 43.8.1 with scoped transitive fixes. Complete and production pnpm audits both returned zero findings on the review date. One existing glib advisory remains in the Linux/BSD GTK dependency graph; locked Windows x64 dependency checks exclude glib. The target-specific limitation and upstream fix are documented in dependency-security.md. Advisory data changes; the release workflow requires current checks for the exact commit.
 
 The extended private-term review of the verified Node binary produced two ordinary upstream Unicode-label matches. Both were reviewed as false positives; the binary and scanner were left unchanged. No actual private content was found.
 

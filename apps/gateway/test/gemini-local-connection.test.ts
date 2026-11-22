@@ -19,6 +19,7 @@ it("accepts only an explicit loopback MCP connection without URL credentials", (
       transport: { ...connection().transport, url } })).toThrow();
   }
 });
+// Allow for six real PowerShell/DPAPI cold starts on a shared Windows runner.
 it.skipIf(process.platform !== "win32")("protects explicit local pairing and refreshes only an existing registration", async () => {
   const root = await mkdtemp(join(tmpdir(), "so-gemini-pairing-"));
   const environment = { ...process.env, LOCALAPPDATA: root };
@@ -34,4 +35,4 @@ it.skipIf(process.platform !== "win32")("protects explicit local pairing and ref
     expect(await readRegisteredGeminiConnection(environment)).toEqual(next);
     expect(await refreshRegisteredGeminiConnection(next.transport.url, "updated-fixture-token-123456", environment)).toBe(false);
   } finally { await rm(root, { recursive: true, force: true }); }
-}, 20_000);
+}, 60_000);
