@@ -22,15 +22,21 @@ function pairingPath(environment: NodeJS.ProcessEnv) {
 
 const codec = Buffer.from(`
 $ErrorActionPreference='Stop'
+[Console]::Error.WriteLine('SCR_DPAPI_STAGE:started')
 [Console]::InputEncoding=[Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
-$inputValue=[Console]::In.ReadToEnd()|ConvertFrom-Json
+$inputText=[Console]::In.ReadToEnd()
+[Console]::Error.WriteLine('SCR_DPAPI_STAGE:read')
+$inputValue=$inputText|ConvertFrom-Json
+[Console]::Error.WriteLine('SCR_DPAPI_STAGE:parsed')
 if($inputValue.mode -eq 'protect'){
   $result=ConvertTo-SecureString $inputValue.value -AsPlainText -Force|ConvertFrom-SecureString
 }else{
   $result=[Net.NetworkCredential]::new('',(ConvertTo-SecureString $inputValue.value)).Password
 }
+[Console]::Error.WriteLine('SCR_DPAPI_STAGE:transformed')
 [Console]::Out.Write($result)
+[Console]::Error.WriteLine('SCR_DPAPI_STAGE:written')
 `, "utf16le").toString("base64");
 
 function transformSecret(mode: "protect" | "restore", value: string, environment: NodeJS.ProcessEnv): Promise<string> {
@@ -40,16 +46,64 @@ function transformSecret(mode: "protect" | "restore", value: string, environment
     const env = Object.fromEntries(["SystemRoot", "WINDIR", "TEMP", "TMP", "USERPROFILE", "LOCALAPPDATA", "APPDATA"]
       .flatMap((key) => environment[key] === undefined ? [] : [[key, environment[key]]]));
     const child = spawn(executable, ["-NoProfile", "-NonInteractive", "-EncodedCommand", codec], {
-      shell: false, windowsHide: true,
-      env,
-      stdio: ["pipe", "pipe", "ignore"],
+      shell: false, windowsHide: true, env, stdio: ["pipe", "pipe", "pipe"],
     });
     let output = "";
-    child.stdout.setEncoding("utf8").on("data", (chunk: string) => { output += chunk; });
-    child.once("error", reject);
-    child.stdin.on("error", () => undefined);
-    child.once("close", (code) => code === 0 && output.trim() ? resolve(output.trim())
-      : reject(new Error(`Local Gemini connection protection failed (exit ${String(code)}).`)));
+    let outputBytes = 0;
+    let diagnosticTail = "";
+    let discardDiagnosticLine = false;
+    let stage = "spawn";
+    let settled = false;
+    const fail = (reason: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      if (child.exitCode === null && child.signalCode === null) {
+        try { child.kill(); } catch { /* Preserve the bounded, credential-free failure. */ }
+      }
+      child.stdin.destroy();
+      child.stdout.destroy();
+      child.stderr.destroy();
+      reject(new Error("Local Gemini connection " + mode + " failed (" + reason + "; stage " + stage + ")."));
+    };
+    const deadline = setTimeout(() => fail("timed out after 20000 ms"), 20_000);
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
+      outputBytes += Buffer.byteLength(chunk, "utf8");
+      if (outputBytes > 512 * 1024) return fail("output exceeded the protection limit");
+      output += chunk;
+    });
+    // Only fixed markers are retained. PowerShell errors can include credential input.
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+      const parts = chunk.split("\n");
+      for (let index = 0; index < parts.length; index++) {
+        const complete = index < parts.length - 1;
+        if (!discardDiagnosticLine) {
+          const line = diagnosticTail + parts[index]!;
+          if (complete) {
+            const match = /^SCR_DPAPI_STAGE:(started|read|parsed|transformed|written)\r?$/u.exec(line);
+            if (match) stage = match[1]!;
+          } else if (["started", "read", "parsed", "transformed", "written"]
+            .some((value) => ("SCR_DPAPI_STAGE:" + value + "\r").startsWith(line))) {
+            diagnosticTail = line;
+          } else {
+            diagnosticTail = "";
+            discardDiagnosticLine = true;
+          }
+        }
+        if (complete) { diagnosticTail = ""; discardDiagnosticLine = false; }
+      }
+    });
+    child.on("error", () => fail("process could not start"));
+    child.stdin.once("error", () => fail("input pipe failed"));
+    child.stdout.once("error", () => fail("output pipe failed"));
+    child.stderr.once("error", () => fail("diagnostic pipe failed"));
+    child.once("close", (code) => {
+      if (settled) return;
+      if (code !== 0 || !output.trim()) return fail("exit " + String(code));
+      settled = true;
+      clearTimeout(deadline);
+      resolve(output.trim());
+    });
     child.stdin.end(JSON.stringify({ mode, value }));
   });
 }

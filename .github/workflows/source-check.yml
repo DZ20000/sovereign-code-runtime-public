@@ -41,6 +41,8 @@ jobs:
       - name: Check public source for private state and credentials
         run: node scripts/public-source-check.mjs --root .
       - run: pnpm typecheck
+      - name: Verify Windows protected pairing
+        run: pnpm exec vitest run apps/gateway/test/gemini-local-connection.test.ts --reporter=verbose
       - name: Build native Windows agent
         run: pnpm --filter @sovereign/desktop run build:native
       - run: pnpm test:demo-continuity
