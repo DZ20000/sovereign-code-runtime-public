@@ -34,6 +34,7 @@ import {
 } from "@sovereign/runtime-core";
 import { ToolCatalog } from "@sovereign/toolkit";
 import { assertGatewayBearerToken } from "./bearer-token.js";
+import { ConversationSessions } from "./conversation-sessions.js";
 
 export interface BearerGrant {
   readonly token: string;
@@ -336,6 +337,7 @@ function createMcpServer(
   runtimeVersion: string,
   sessionIdProvider: () => string | null,
   normalizeToolInput?: GatewayToolInputNormalizer,
+  resolveToolSession?: (metadata: unknown) => string,
 ): McpServer {
   const server = new McpServer(
     {
@@ -361,6 +363,7 @@ function createMcpServer(
   const inboxSelfReportingTools = new Set(["tasks.inbox", "tasks.heartbeat"]);
   const deliveredInbox = async (
     sourceToolName: string,
+    sessionId: string | null,
   ): Promise<unknown | undefined> => {
     if (!taskInboxAvailable || inboxSelfReportingTools.has(sourceToolName)) {
       return undefined;
@@ -368,7 +371,7 @@ function createMcpServer(
     try {
       const inbox = await catalog.invoke(
         "tasks.inbox",
-        { principal, sessionId: sessionIdProvider() },
+        { principal, sessionId },
         { taskLimit: 20, messageLimit: 20 },
       );
       return taskInboxPendingCount(inbox) === 0 ? undefined : inbox;
@@ -397,8 +400,13 @@ function createMcpServer(
     })),
   }));
   server.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    // Per-call context: simultaneous conversations must never share mutable
+    // session state, and model-supplied arguments cannot select this identity.
+    let sessionId: string | null = null;
     try {
-      const sessionId = sessionIdProvider();
+      sessionId = resolveToolSession === undefined
+        ? sessionIdProvider()
+        : resolveToolSession(request.params._meta);
       const input = request.params.arguments ?? {};
       const normalizedInput =
         normalizeToolInput === undefined
@@ -415,7 +423,7 @@ function createMcpServer(
         normalizedInput,
       );
       const presented = presentScreenshotResult(request.params.name, result);
-      const operatorInbox = await deliveredInbox(request.params.name);
+      const operatorInbox = sessionId === null ? undefined : await deliveredInbox(request.params.name, sessionId);
       return {
         content: [
           {
@@ -436,7 +444,7 @@ function createMcpServer(
       };
     } catch (error) {
       const errorResult = { error: toPublicRuntimeError(error) };
-      const operatorInbox = await deliveredInbox(request.params.name);
+      const operatorInbox = sessionId === null ? undefined : await deliveredInbox(request.params.name, sessionId);
       return {
         isError: true,
         content: [
@@ -474,6 +482,7 @@ export function createGatewayApplication(
 ): GatewayApplication {
   const app = express();
   const sessions = new Map<string, SessionEntry>();
+  const conversationSessions = new ConversationSessions();
   const authenticate = createAuthenticationMiddleware(config);
   let gatewaySessionPolicy: GatewaySessionPolicy;
   try {
@@ -648,15 +657,16 @@ export function createGatewayApplication(
     const reason = entry.closeReason ?? fallbackReason;
     entry.closeReason = reason;
     entry.sessionClosedNotified = true;
-    try {
-      config.onSessionClosed?.({
-        principalId: entry.principalId,
-        sessionId: entry.sessionId,
-        observedAt: new Date().toISOString(),
-        reason,
-      });
-    } catch {
-      // Session bookkeeping must never block transport cleanup.
+    const closedConversations = conversationSessions.closeTransport(entry.principalId, entry.sessionId, reason);
+    for (const sessionId of [entry.sessionId, ...closedConversations]) {
+      try {
+        config.onSessionClosed?.({
+          principalId: entry.principalId, sessionId,
+          observedAt: new Date().toISOString(), reason,
+        });
+      } catch {
+        // Session bookkeeping must never block transport cleanup.
+      }
     }
   }
 
@@ -701,6 +711,20 @@ export function createGatewayApplication(
       config.runtimeVersion,
       () => initializedSessionId,
       config.normalizeToolInput,
+      (metadata) => {
+        if (initializedSessionId === null || entry.closing || entry.sessionClosedNotified) {
+          throw new RuntimeError("POLICY_DENIED", "The MCP transport is not live.", 403);
+        }
+        const sessionId = conversationSessions.resolve(principal.id, initializedSessionId, metadata);
+        if (sessionId !== initializedSessionId) {
+          try {
+            config.onSessionActivity?.({ principalId: principal.id, sessionId, observedAt: new Date().toISOString() });
+          } catch {
+            // Metadata correlation never replaces the downstream ownership check.
+          }
+        }
+        return sessionId;
+      },
     );
     entry = {
       principalId: principal.id,

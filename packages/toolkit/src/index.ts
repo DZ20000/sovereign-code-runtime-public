@@ -579,6 +579,29 @@ export function createBuiltinTools(adapter: WindowsAdapter): readonly RuntimeToo
     ),
     defineTool(
       {
+        name: "files.read_image",
+        version: "1.0.0",
+        title: "Read local image",
+        description:
+          "Read a PNG, JPEG or WebP in an authorized workspace as native MCP image content. The image is disclosed to the connected client under the workspace permission and approval policy. Maximum 6 MiB. Does not modify the image.",
+        category: "files",
+        requiredCapabilities: ["files.read"],
+        sideEffect: "read",
+        destructive: false,
+        permissionLevel: "workspace",
+        approvalMode: "single-use",
+        inputSchema: objectSchema({
+          workspaceId: { type: "string", minLength: 1, maxLength: 128 },
+          path: { type: "string", minLength: 1, maxLength: 4_096 },
+        }),
+      },
+      { workspaceId, path: requiredRelativePath },
+      ({ principal }, input) =>
+        adapter.readImageFile(principal, input.workspaceId, input.path),
+      (input) => input.workspaceId,
+    ),
+    defineTool(
+      {
         name: "files.metadata",
         version: "1.0.0",
         title: "File metadata",

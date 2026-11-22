@@ -21,7 +21,7 @@
 - [安全执行](secure-execution.md)和 [Gateway 会话容量](gateway-session-capacity.md)
 - [应用重启更新](application-restart-updates.md)
 - [Renderer 热更新](renderer-hot-updates.md)和 [Runtime 候选更新](runtime-candidate-updates.md)
-- [签名更新](signed-update.md)、[分层更新](layered-live-update.md)和[持久化切换恢复](durable-cutover-recovery.md)
+- [签名更新](signed-update.md)和[应用重启更新](application-restart-updates.md)
 - [依赖安全](dependency-security.md)
 
 ## 维护

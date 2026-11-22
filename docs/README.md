@@ -19,9 +19,8 @@
 
 - [Threat model](threat-model.md) and [Android threat model](android-agent-threat-model.md)
 - [Secure execution](secure-execution.md) and [Gateway session capacity](gateway-session-capacity.md)
-- [Application restart updates](application-restart-updates.md)
+- [Signed updates](signed-update.md) and [Application restart updates](application-restart-updates.md)
 - [Renderer hot updates](renderer-hot-updates.md) and [Runtime candidate updates](runtime-candidate-updates.md)
-- [Signed updates](signed-update.md), [layered updates](layered-live-update.md), and [durable cutover recovery](durable-cutover-recovery.md)
 - [Dependency security](dependency-security.md)
 
 ## Maintenance

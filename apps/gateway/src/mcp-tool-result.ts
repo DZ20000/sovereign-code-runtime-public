@@ -50,6 +50,29 @@ export function presentScreenshotResult(
   toolName: string,
   result: unknown,
 ): { readonly result: unknown; readonly images: readonly ImageContent[] } {
+  if (toolName === "files.read_image") {
+    if (result === null || typeof result !== "object" || Array.isArray(result)
+        || !("imageBase64" in result)) {
+      throw new RuntimeError("INTERNAL_ERROR", "Image tool did not return image content.", 500);
+    }
+    const { imageBase64, ...metadata } = result;
+    const mimeType = "mimeType" in metadata ? metadata.mimeType : undefined;
+    const maxImageBytes = 6 * 1024 * 1024;
+    if (typeof imageBase64 !== "string" || imageBase64.length === 0
+        || imageBase64.length > 4 * Math.ceil(maxImageBytes / 3)
+        || !["image/png", "image/jpeg", "image/webp"].includes(String(mimeType))) {
+      throw new RuntimeError("INTERNAL_ERROR", "Image payload is invalid or oversized.", 500);
+    }
+    const bytes = Buffer.from(imageBase64, "base64");
+    if (bytes.length === 0 || bytes.length > maxImageBytes || bytes.toString("base64") !== imageBase64) {
+      throw new RuntimeError("INTERNAL_ERROR", "Image payload is not valid bounded Base64.", 500);
+    }
+    const image = ImageContentSchema.safeParse({ type: "image", mimeType, data: imageBase64 });
+    if (!image.success) {
+      throw new RuntimeError("INTERNAL_ERROR", "Image payload did not pass the MCP image contract.", 500);
+    }
+    return { result: metadata, images: [image.data] };
+  }
   if (
     (toolName !== "browser.observe" && toolName !== "computer.observe") ||
     result === null ||

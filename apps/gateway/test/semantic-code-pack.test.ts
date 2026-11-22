@@ -157,4 +157,27 @@ describe("semantic code tool pack", () => {
       ],
     ]);
   });
+
+  it("publishes the closed input and defaults enforced by semantic execution", () => {
+    const definition = createSemanticCodeToolPack(provider()).definitions
+      .find(({ spec }) => spec.name === "code.symbols")!;
+    expect(definition.spec.inputSchema).toEqual({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        workspaceId: { type: "string", minLength: 1, maxLength: 128 },
+        path: { type: "string", minLength: 1, maxLength: 4_096 },
+        depth: { type: "integer", minimum: 0, maximum: 3, default: 0 },
+        maxChars: { type: "integer", minimum: 1_024, maximum: 100_000, default: 50_000 },
+      },
+      required: ["workspaceId", "path"],
+    });
+    const input = { workspaceId: "workspace", path: "src/example.ts" };
+    expect(definition.parse(input)).toEqual({ ...input, depth: 0, maxChars: 50_000 });
+    expect(() => definition.parse({ ...input, depth: 4 })).toThrow();
+    expect(() => definition.parse({ ...input, maxChars: 1_023 })).toThrow();
+    expect(() => definition.parse({ ...input, arbitrary: true })).toThrow();
+    expect(() => definition.parse({ workspaceId: "workspace" })).toThrow();
+  });
 });

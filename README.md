@@ -1,5 +1,7 @@
 # Sovereign Code Runtime
 
+For a standalone Windows x64 download, see [Windows Portable installation](docs/windows-portable.md).
+
 **Durable local work for ephemeral AI agents.**
 
 [![Windows source checks](https://github.com/DZ20000/sovereign-code-runtime-public/actions/workflows/source-check.yml/badge.svg)](https://github.com/DZ20000/sovereign-code-runtime-public/actions/workflows/source-check.yml)

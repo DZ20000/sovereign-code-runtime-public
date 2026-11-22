@@ -138,6 +138,7 @@ struct RuntimeHostLaunchOptions {
     role: &'static str,
     promotion_fencing_token: Option<String>,
     user_data: PathBuf,
+    #[cfg(debug_assertions)]
     workspace_root: PathBuf,
     environment_workspace_root: Option<PathBuf>,
     node_executable: PathBuf,
@@ -796,20 +797,21 @@ impl RuntimeHost {
         };
         let user_data = node_compatible_path(user_data);
 
-        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let workspace_root = manifest_dir
+        #[cfg(debug_assertions)]
+        let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .ancestors()
             .nth(3)
             .ok_or_else(|| "Could not resolve Sovereign workspace root for Tauri POC.".to_string())?
             .to_path_buf();
         let environment_workspace_root = std::env::var_os("SCR_WORKSPACE_ROOT").map(PathBuf::from);
-        let (node_executable, runtime_script, native_agent) = if cfg!(debug_assertions) {
-            (
-                PathBuf::from("node"),
-                workspace_root.join("apps/runtime-host/dist/bundle/runtime-host.cjs"),
-                workspace_root.join("apps/desktop/native/bin/SovereignNativeAgent.exe"),
-            )
-        } else {
+        #[cfg(debug_assertions)]
+        let (node_executable, runtime_script, native_agent) = (
+            PathBuf::from("node"),
+            workspace_root.join("apps/runtime-host/dist/bundle/runtime-host.cjs"),
+            workspace_root.join("apps/desktop/native/bin/SovereignNativeAgent.exe"),
+        );
+        #[cfg(not(debug_assertions))]
+        let (node_executable, runtime_script, native_agent) = {
             let resources = app
                 .path()
                 .resource_dir()
@@ -853,6 +855,7 @@ impl RuntimeHost {
             role: "active",
             promotion_fencing_token: None,
             user_data,
+            #[cfg(debug_assertions)]
             workspace_root,
             environment_workspace_root,
             node_executable,
@@ -922,7 +925,9 @@ impl RuntimeHost {
         }
         if let Some(environment_workspace_root) = options.environment_workspace_root.as_ref() {
             command.env("SCR_WORKSPACE_ROOT", environment_workspace_root);
-        } else if cfg!(debug_assertions) {
+        }
+        #[cfg(debug_assertions)]
+        if options.environment_workspace_root.is_none() {
             command.env("SCR_WORKSPACE_ROOT", &options.workspace_root);
         }
         #[cfg(windows)]

@@ -305,7 +305,7 @@ Activation is intentionally separate from installation. Merely copying or instal
 Relevant checks are:
 
 ```powershell
-pnpm --filter @sovereign/update-core test
+pnpm exec vitest run packages/update-core/test/renderer.test.ts
 pnpm --filter @sovereign/desktop-tauri smoke:renderer-update
 pnpm --filter @sovereign/desktop-tauri typecheck
 pnpm --filter @sovereign/desktop-tauri build:web

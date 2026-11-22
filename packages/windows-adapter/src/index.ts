@@ -402,6 +402,35 @@ function assertSuccessfulProcess(result: ProcessResult, operation: string): Proc
   });
 }
 
+function terminalProcess(command: string, timeoutMs: number) {
+  const normalizedCommand = command.trim();
+  if (normalizedCommand.length === 0 || command.length > 32_768 || command.includes("\0")) {
+    throw new RuntimeError(
+      "INVALID_INPUT",
+      "PowerShell command length must be from 1 through 32768 characters and contain no NUL bytes.",
+      400,
+    );
+  }
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1_000 || timeoutMs > 300_000) {
+    throw new RuntimeError("INVALID_INPUT", "Terminal timeout must be from 1000 through 300000 milliseconds.", 400);
+  }
+  const powershell = win32.join(
+    process.env.SystemRoot ?? "C:\\Windows",
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+    "powershell.exe",
+  );
+  const script = [
+    "$OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false);",
+    normalizedCommand,
+  ].join(" ");
+  return {
+    command: powershell,
+    args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+  };
+}
+
 export class WindowsAdapter {
   readonly #policy: PolicyEngine;
   readonly #audit: AuditStore;
@@ -509,38 +538,46 @@ export class WindowsAdapter {
     this.#policy.require(principal, capabilities, workspaceId);
   }
 
-  #appendWriteReceipt(input: {
-    readonly id: string;
-    readonly principal: Principal;
-    readonly toolName: string;
-    readonly operation: string;
-    readonly outcome: AuditOutcome;
-    readonly workspaceId: string;
-    readonly requestedPath: string;
-    readonly relativePath?: string;
-    readonly beforeSha256?: string;
-    readonly afterSha256?: string;
-    readonly errorCode?: string;
-    readonly details?: Readonly<Record<string, unknown>>;
-  }): void {
-    const receipt: AuditReceipt = {
-      id: input.id,
-      occurredAt: new Date().toISOString(),
-      principalId: input.principal.id,
-      toolName: input.toolName,
-      operation: input.operation,
-      outcome: input.outcome,
-      workspaceId: input.workspaceId,
-      details: {
-        requestedPath: input.requestedPath,
-        ...(input.details ?? {}),
+  #writeAudit(
+    principal: Principal,
+    toolName: string,
+    operation: string,
+    workspaceId?: string,
+    requestedPath?: string,
+  ) {
+    const receiptId = randomUUID();
+    return {
+      receiptId,
+      record: (input: {
+        readonly outcome: AuditOutcome;
+        readonly requestedPath?: string;
+        readonly relativePath?: string;
+        readonly beforeSha256?: string;
+        readonly afterSha256?: string;
+        readonly errorCode?: string;
+        readonly details?: Readonly<Record<string, unknown>>;
+      }): void => {
+        const path = input.requestedPath ?? requestedPath;
+        const receipt: AuditReceipt = {
+          id: receiptId,
+          occurredAt: new Date().toISOString(),
+          principalId: principal.id,
+          toolName,
+          operation,
+          outcome: input.outcome,
+          ...(workspaceId === undefined ? {} : { workspaceId }),
+          details: {
+            ...(path === undefined ? {} : { requestedPath: path }),
+            ...(input.details ?? {}),
+          },
+          ...(input.relativePath === undefined ? {} : { relativePath: input.relativePath }),
+          ...(input.beforeSha256 === undefined ? {} : { beforeSha256: input.beforeSha256 }),
+          ...(input.afterSha256 === undefined ? {} : { afterSha256: input.afterSha256 }),
+          ...(input.errorCode === undefined ? {} : { errorCode: input.errorCode }),
+        };
+        this.#audit.append(receipt);
       },
-      ...(input.relativePath === undefined ? {} : { relativePath: input.relativePath }),
-      ...(input.beforeSha256 === undefined ? {} : { beforeSha256: input.beforeSha256 }),
-      ...(input.afterSha256 === undefined ? {} : { afterSha256: input.afterSha256 }),
-      ...(input.errorCode === undefined ? {} : { errorCode: input.errorCode }),
     };
-    this.#audit.append(receipt);
   }
 
   systemInfo(principal: Principal): Readonly<Record<string, unknown>> {
@@ -563,18 +600,15 @@ export class WindowsAdapter {
     principal: Principal,
     input: DesktopNotificationInput,
   ): Promise<DesktopNotificationResult & { readonly receiptId: string }> {
-    const receiptId = randomUUID();
+    const { receiptId, record } = this.#writeAudit(
+      principal, "system.notify", "show_windows_notification",
+    );
     const titleSha256 = sha256(input.title);
     const messageSha256 = sha256(input.message);
     try {
       this.#policy.require(principal, ["system.notify"]);
       const result = await this.#notifications.notify(input);
-      this.#audit.append({
-        id: receiptId,
-        occurredAt: new Date().toISOString(),
-        principalId: principal.id,
-        toolName: "system.notify",
-        operation: "show_windows_notification",
+      record({
         outcome: "succeeded",
         details: {
           titleSha256,
@@ -589,12 +623,7 @@ export class WindowsAdapter {
       });
       return { ...result, receiptId };
     } catch (error) {
-      this.#audit.append({
-        id: receiptId,
-        occurredAt: new Date().toISOString(),
-        principalId: principal.id,
-        toolName: "system.notify",
-        operation: "show_windows_notification",
+      record({
         outcome: outcomeOf(error),
         errorCode: codeOf(error),
         details: {
@@ -751,13 +780,86 @@ export class WindowsAdapter {
     }
   }
 
+  /**
+   * Read bounded image bytes from the same verified workspace file handle.
+   * The MCP projection emits pixels separately from JSON metadata.
+   */
+  async readImageFile(
+    principal: Principal,
+    workspaceId: string,
+    relativePath: string,
+  ): Promise<{
+    readonly workspaceId: string;
+    readonly relativePath: string;
+    readonly bytes: number;
+    readonly sha256: string;
+    readonly mimeType: "image/png" | "image/jpeg" | "image/webp";
+    readonly imageBase64: string;
+  }> {
+    this.#require(principal, workspaceId, ["files.read"]);
+    const guard = this.#guard(workspaceId);
+    const resolved = await guard.resolve(relativePath, "read");
+    const extension = win32.extname(resolved.relativePath).toLowerCase();
+    if (![".png", ".jpg", ".jpeg", ".webp"].includes(extension)) {
+      throw new RuntimeError("INVALID_INPUT", "Only PNG, JPEG and WebP images are supported.", 400);
+    }
+    const handle = await open(resolved.absolutePath, "r");
+    try {
+      await guard.assertOpenedRegularFile(resolved.absolutePath, handle);
+      const maxImageBytes = 6 * 1024 * 1024;
+      const info = await handle.stat();
+      if (info.size > maxImageBytes) {
+        throw new RuntimeError("FILE_TOO_LARGE", "Image exceeds the image read limit.", 413, {
+          bytes: info.size,
+          maxBytes: maxImageBytes,
+        });
+      }
+      // The extra byte detects a file that grows after stat without an unbounded readFile().
+      const buffer = Buffer.alloc(maxImageBytes + 1);
+      let length = 0;
+      while (length < buffer.length) {
+        const { bytesRead } = await handle.read(buffer, length, buffer.length - length, length);
+        if (bytesRead === 0) break;
+        length += bytesRead;
+      }
+      if (length > maxImageBytes) {
+        throw new RuntimeError("FILE_TOO_LARGE", "Image exceeds the image read limit.", 413, {
+          maxBytes: maxImageBytes,
+        });
+      }
+      await guard.assertOpenedRegularFile(resolved.absolutePath, handle);
+      const data = buffer.subarray(0, length);
+      const png = data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+      const jpeg = data[0] === 255 && data[1] === 216 && data[2] === 255;
+      const webp = data.toString("ascii", 0, 4) === "RIFF"
+        && data.toString("ascii", 8, 12) === "WEBP";
+      if ((extension === ".png" && !png)
+        || ((extension === ".jpg" || extension === ".jpeg") && !jpeg)
+        || (extension === ".webp" && !webp)) {
+        throw new RuntimeError("INVALID_INPUT", "The file signature does not match its image extension.", 400);
+      }
+      return {
+        workspaceId,
+        relativePath: resolved.relativePath,
+        bytes: data.byteLength,
+        sha256: sha256(data),
+        mimeType: png ? "image/png" : jpeg ? "image/jpeg" : "image/webp",
+        imageBase64: data.toString("base64"),
+      };
+    } finally {
+      await handle.close();
+    }
+  }
+
   async createTextFile(
     principal: Principal,
     workspaceId: string,
     relativePath: string,
     content: string,
   ): Promise<WriteTextResult> {
-    const receiptId = randomUUID();
+    const { receiptId, record } = this.#writeAudit(
+      principal, "files.create", "create_text_file", workspaceId, relativePath,
+    );
     let normalizedPath: string | undefined;
     try {
       this.#require(principal, workspaceId, ["files.write"]);
@@ -774,14 +876,8 @@ export class WindowsAdapter {
         data,
         this.#maxWriteBytes,
       );
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "files.create",
-        operation: "create_text_file",
+      record({
         outcome: "succeeded",
-        workspaceId,
-        requestedPath: relativePath,
         relativePath: resolved.relativePath,
         afterSha256: result.sha256,
         details: { bytes: result.bytes },
@@ -794,14 +890,8 @@ export class WindowsAdapter {
         receiptId,
       };
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "files.create",
-        operation: "create_text_file",
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: relativePath,
         ...(normalizedPath === undefined ? {} : { relativePath: normalizedPath }),
         errorCode: codeOf(error),
       });
@@ -814,21 +904,17 @@ export class WindowsAdapter {
     workspaceId: string,
     relativePath: string,
   ): Promise<{ readonly workspaceId: string; readonly relativePath: string; readonly receiptId: string }> {
-    const receiptId = randomUUID();
+    const { receiptId, record } = this.#writeAudit(
+      principal, "files.mkdir", "create_directory", workspaceId, relativePath,
+    );
     let normalizedPath: string | undefined;
     try {
       this.#require(principal, workspaceId, ["files.write"]);
       const resolved = await this.#guard(workspaceId).resolve(relativePath, "create");
       normalizedPath = resolved.relativePath;
       await mkdir(resolved.absolutePath);
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "files.mkdir",
-        operation: "create_directory",
+      record({
         outcome: "succeeded",
-        workspaceId,
-        requestedPath: relativePath,
         relativePath: resolved.relativePath,
       });
       return {
@@ -837,14 +923,8 @@ export class WindowsAdapter {
         receiptId,
       };
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "files.mkdir",
-        operation: "create_directory",
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: relativePath,
         ...(normalizedPath === undefined ? {} : { relativePath: normalizedPath }),
         errorCode: codeOf(error),
       });
@@ -861,7 +941,9 @@ export class WindowsAdapter {
     receiptToolName = "files.replace",
     receiptOperation = "replace_text_file",
   ): Promise<WriteTextResult> {
-    const receiptId = randomUUID();
+    const { receiptId, record } = this.#writeAudit(
+      principal, receiptToolName, receiptOperation, workspaceId, relativePath,
+    );
     let normalizedPath: string | undefined;
     let beforeSha256: string | undefined;
     try {
@@ -895,14 +977,8 @@ export class WindowsAdapter {
         await handle.close();
       }
       const afterSha256 = sha256(nextData);
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: receiptToolName,
-        operation: receiptOperation,
+      record({
         outcome: "succeeded",
-        workspaceId,
-        requestedPath: relativePath,
         relativePath: resolved.relativePath,
         beforeSha256,
         afterSha256,
@@ -916,14 +992,8 @@ export class WindowsAdapter {
         receiptId,
       };
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: receiptToolName,
-        operation: receiptOperation,
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: relativePath,
         ...(normalizedPath === undefined ? {} : { relativePath: normalizedPath }),
         ...(beforeSha256 === undefined ? {} : { beforeSha256 }),
         errorCode: codeOf(error),
@@ -988,7 +1058,9 @@ export class WindowsAdapter {
     readonly sha256: string;
     readonly receiptId: string;
   }> {
-    const receiptId = randomUUID();
+    const { receiptId, record } = this.#writeAudit(
+      principal, "files.move", "move_file", workspaceId, sourcePath,
+    );
     let normalizedSource: string | undefined;
     let normalizedDestination: string | undefined;
     let beforeSha256: string | undefined;
@@ -1008,14 +1080,8 @@ export class WindowsAdapter {
         this.#maxReadBytes,
       );
       beforeSha256 = result.sha256;
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "files.move",
-        operation: "move_file",
+      record({
         outcome: "succeeded",
-        workspaceId,
-        requestedPath: sourcePath,
         relativePath: destination.relativePath,
         beforeSha256,
         afterSha256: beforeSha256,
@@ -1034,14 +1100,8 @@ export class WindowsAdapter {
         receiptId,
       };
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "files.move",
-        operation: "move_file",
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: sourcePath,
         ...(normalizedDestination === undefined ? {} : { relativePath: normalizedDestination }),
         ...(beforeSha256 === undefined ? {} : { beforeSha256 }),
         errorCode: codeOf(error),
@@ -1066,7 +1126,9 @@ export class WindowsAdapter {
     readonly sha256: string;
     readonly receiptId: string;
   }> {
-    const receiptId = randomUUID();
+    const { receiptId, record } = this.#writeAudit(
+      principal, "files.delete", "delete_file", workspaceId, relativePath,
+    );
     let normalizedPath: string | undefined;
     let beforeSha256: string | undefined;
     try {
@@ -1082,14 +1144,8 @@ export class WindowsAdapter {
         this.#maxReadBytes,
       );
       beforeSha256 = result.sha256;
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "files.delete",
-        operation: "delete_file",
+      record({
         outcome: "succeeded",
-        workspaceId,
-        requestedPath: relativePath,
         relativePath: resolved.relativePath,
         beforeSha256,
         details: { bytes: result.bytes },
@@ -1102,14 +1158,8 @@ export class WindowsAdapter {
         receiptId,
       };
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "files.delete",
-        operation: "delete_file",
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: relativePath,
         ...(normalizedPath === undefined ? {} : { relativePath: normalizedPath }),
         ...(beforeSha256 === undefined ? {} : { beforeSha256 }),
         errorCode: codeOf(error),
@@ -1261,22 +1311,14 @@ export class WindowsAdapter {
     relativeCwd = "",
     timeoutMs = this.#processTimeoutMs,
   ): Promise<TerminalExecutionResult> {
-    const receiptId = randomUUID();
+    const { receiptId, record } = this.#writeAudit(
+      principal, "terminal.exec", "execute_powershell", workspaceId, relativeCwd,
+    );
     const commandDigest = sha256(command);
     let normalizedCwd: string | undefined;
     try {
       this.#require(principal, workspaceId, ["terminal.run"]);
-      const normalizedCommand = command.trim();
-      if (normalizedCommand.length === 0 || command.length > 32_768 || command.includes("\0")) {
-        throw new RuntimeError(
-          "INVALID_INPUT",
-          "PowerShell command length must be from 1 through 32768 characters and contain no NUL bytes.",
-          400,
-        );
-      }
-      if (!Number.isInteger(timeoutMs) || timeoutMs < 1_000 || timeoutMs > 300_000) {
-        throw new RuntimeError("INVALID_INPUT", "Terminal timeout must be from 1000 through 300000 milliseconds.", 400);
-      }
+      const processSpec = terminalProcess(command, timeoutMs);
 
       const resolved = await this.#guard(workspaceId).resolve(relativeCwd, "read", true);
       normalizedCwd = resolved.relativePath;
@@ -1285,21 +1327,9 @@ export class WindowsAdapter {
         throw new RuntimeError("PATH_NOT_DIRECTORY", "Terminal working directory must be a directory.", 400);
       }
 
-      const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
-      const powershell = win32.join(
-        systemRoot,
-        "System32",
-        "WindowsPowerShell",
-        "v1.0",
-        "powershell.exe",
-      );
-      const script = [
-        "$OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false);",
-        normalizedCommand,
-      ].join(" ");
       const result = await runBoundedProcess(
-        powershell,
-        ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+        processSpec.command,
+        processSpec.args,
         resolved.absolutePath,
         "PowerShell command",
         timeoutMs,
@@ -1308,14 +1338,8 @@ export class WindowsAdapter {
         true,
       );
 
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "terminal.exec",
-        operation: "execute_powershell",
+      record({
         outcome: result.exitCode === 0 ? "succeeded" : "failed",
-        workspaceId,
-        requestedPath: relativeCwd,
         relativePath: resolved.relativePath,
         details: {
           commandSha256: commandDigest,
@@ -1331,14 +1355,8 @@ export class WindowsAdapter {
         receiptId,
       };
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "terminal.exec",
-        operation: "execute_powershell",
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: relativeCwd,
         ...(normalizedCwd === undefined ? {} : { relativePath: normalizedCwd }),
         errorCode: codeOf(error),
         details: { commandSha256: commandDigest },
@@ -1354,22 +1372,14 @@ export class WindowsAdapter {
     relativeCwd = "",
     timeoutMs = this.#processTimeoutMs,
   ): Promise<RunRecord> {
-    const receiptId = randomUUID();
+    const { record } = this.#writeAudit(
+      principal, "terminal.start", "start_powershell_run", workspaceId, relativeCwd,
+    );
     const commandDigest = sha256(command);
     let normalizedCwd: string | undefined;
     try {
       this.#require(principal, workspaceId, ["terminal.run"]);
-      const normalizedCommand = command.trim();
-      if (normalizedCommand.length === 0 || command.length > 32_768 || command.includes("\0")) {
-        throw new RuntimeError(
-          "INVALID_INPUT",
-          "PowerShell command length must be from 1 through 32768 characters and contain no NUL bytes.",
-          400,
-        );
-      }
-      if (!Number.isInteger(timeoutMs) || timeoutMs < 1_000 || timeoutMs > 300_000) {
-        throw new RuntimeError("INVALID_INPUT", "Terminal timeout must be from 1000 through 300000 milliseconds.", 400);
-      }
+      const processSpec = terminalProcess(command, timeoutMs);
 
       const resolved = await this.#guard(workspaceId).resolve(relativeCwd, "read", true);
       normalizedCwd = resolved.relativePath;
@@ -1378,24 +1388,12 @@ export class WindowsAdapter {
         throw new RuntimeError("PATH_NOT_DIRECTORY", "Terminal working directory must be a directory.", 400);
       }
 
-      const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
-      const powershell = win32.join(
-        systemRoot,
-        "System32",
-        "WindowsPowerShell",
-        "v1.0",
-        "powershell.exe",
-      );
-      const script = [
-        "$OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false);",
-        normalizedCommand,
-      ].join(" ");
       const run = this.#runs.start({
         kind: "terminal",
         label: "PowerShell command",
         workspaceId,
-        command: powershell,
-        args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+        command: processSpec.command,
+        args: processSpec.args,
         cwd: resolved.absolutePath,
         timeoutMs,
         metadata: {
@@ -1405,14 +1403,8 @@ export class WindowsAdapter {
         },
       });
 
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "terminal.start",
-        operation: "start_powershell_run",
+      record({
         outcome: "succeeded",
-        workspaceId,
-        requestedPath: relativeCwd,
         relativePath: resolved.relativePath,
         details: {
           runId: run.id,
@@ -1422,14 +1414,8 @@ export class WindowsAdapter {
       });
       return run;
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "terminal.start",
-        operation: "start_powershell_run",
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: relativeCwd,
         ...(normalizedCwd === undefined ? {} : { relativePath: normalizedCwd }),
         errorCode: codeOf(error),
         details: { commandSha256: commandDigest, timeoutMs },
@@ -1445,7 +1431,9 @@ export class WindowsAdapter {
     columns = 120,
     rows = 32,
   ): Promise<TerminalSessionRecord & { readonly receiptId: string }> {
-    const receiptId = randomUUID();
+    const { receiptId, record } = this.#writeAudit(
+      principal, "terminal.session.create", "create_conpty_session", workspaceId, relativeCwd,
+    );
     let normalizedCwd: string | undefined;
     try {
       this.#require(principal, workspaceId, ["terminal.run"]);
@@ -1471,27 +1459,15 @@ export class WindowsAdapter {
         columns,
         rows,
       });
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "terminal.session.create",
-        operation: "create_conpty_session",
+      record({
         outcome: "succeeded",
-        workspaceId,
-        requestedPath: relativeCwd,
         relativePath: resolved.relativePath,
         details: { sessionId: session.id, columns, rows },
       });
       return { ...session, receiptId };
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "terminal.session.create",
-        operation: "create_conpty_session",
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: relativeCwd,
         ...(normalizedCwd === undefined ? {} : { relativePath: normalizedCwd }),
         errorCode: codeOf(error),
         details: { columns, rows },
@@ -1528,7 +1504,9 @@ export class WindowsAdapter {
     data: string,
     appendEnter = true,
   ): TerminalSessionRecord & { readonly receiptId: string } {
-    const receiptId = randomUUID();
+    const { receiptId, record } = this.#writeAudit(
+      principal, "terminal.session.write", "write_conpty_input", workspaceId, "",
+    );
     try {
       this.#require(principal, workspaceId, ["terminal.run"]);
       const existing = this.#terminals.get(sessionId);
@@ -1536,13 +1514,8 @@ export class WindowsAdapter {
         throw new RuntimeError("RUN_NOT_FOUND", "The terminal session was not found.", 404);
       }
       const session = this.#terminals.write(sessionId, data, appendEnter);
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "terminal.session.write",
-        operation: "write_conpty_input",
+      record({
         outcome: "succeeded",
-        workspaceId,
         requestedPath: existing.relativeCwd,
         relativePath: existing.relativeCwd,
         details: {
@@ -1554,14 +1527,8 @@ export class WindowsAdapter {
       });
       return { ...session, receiptId };
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "terminal.session.write",
-        operation: "write_conpty_input",
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: "",
         errorCode: codeOf(error),
         details: { sessionId, inputSha256: sha256(data), characters: data.length, appendEnter },
       });
@@ -1576,7 +1543,9 @@ export class WindowsAdapter {
     columns: number,
     rows: number,
   ): TerminalSessionRecord & { readonly receiptId: string } {
-    const receiptId = randomUUID();
+    const { receiptId, record } = this.#writeAudit(
+      principal, "terminal.session.resize", "resize_conpty_session", workspaceId, "",
+    );
     try {
       this.#require(principal, workspaceId, ["terminal.run"]);
       const existing = this.#terminals.get(sessionId);
@@ -1584,27 +1553,16 @@ export class WindowsAdapter {
         throw new RuntimeError("RUN_NOT_FOUND", "The terminal session was not found.", 404);
       }
       const session = this.#terminals.resize(sessionId, columns, rows);
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "terminal.session.resize",
-        operation: "resize_conpty_session",
+      record({
         outcome: "succeeded",
-        workspaceId,
         requestedPath: existing.relativeCwd,
         relativePath: existing.relativeCwd,
         details: { sessionId, columns, rows },
       });
       return { ...session, receiptId };
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "terminal.session.resize",
-        operation: "resize_conpty_session",
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: "",
         errorCode: codeOf(error),
         details: { sessionId, columns, rows },
       });
@@ -1617,7 +1575,9 @@ export class WindowsAdapter {
     workspaceId: string,
     sessionId: string,
   ): TerminalSessionRecord & { readonly receiptId: string } {
-    const receiptId = randomUUID();
+    const { receiptId, record } = this.#writeAudit(
+      principal, "terminal.session.close", "close_conpty_session", workspaceId, "",
+    );
     try {
       this.#require(principal, workspaceId, ["terminal.run"]);
       const existing = this.#terminals.get(sessionId);
@@ -1625,27 +1585,16 @@ export class WindowsAdapter {
         throw new RuntimeError("RUN_NOT_FOUND", "The terminal session was not found.", 404);
       }
       const session = this.#terminals.close(sessionId);
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "terminal.session.close",
-        operation: "close_conpty_session",
+      record({
         outcome: "succeeded",
-        workspaceId,
         requestedPath: existing.relativeCwd,
         relativePath: existing.relativeCwd,
         details: { sessionId },
       });
       return { ...session, receiptId };
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "terminal.session.close",
-        operation: "close_conpty_session",
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: "",
         errorCode: codeOf(error),
         details: { sessionId },
       });
@@ -1865,7 +1814,9 @@ export class WindowsAdapter {
     workspaceId: string,
     files: readonly string[],
   ): Promise<ProcessResult & { readonly receiptId: string }> {
-    const receiptId = randomUUID();
+    const { receiptId, record } = this.#writeAudit(
+      principal, "git.stage", "git_stage", workspaceId, "",
+    );
     let normalizedFiles: readonly string[] = [];
     try {
       this.#require(principal, workspaceId, ["git.write"]);
@@ -1886,26 +1837,14 @@ export class WindowsAdapter {
         ),
         "git add",
       );
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "git.stage",
-        operation: "git_stage",
+      record({
         outcome: "succeeded",
-        workspaceId,
-        requestedPath: "",
         details: { files: normalizedFiles, exitCode: result.exitCode },
       });
       return { ...result, receiptId };
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "git.stage",
-        operation: "git_stage",
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: "",
         errorCode: codeOf(error),
         details: { files: normalizedFiles },
       });
@@ -1918,7 +1857,9 @@ export class WindowsAdapter {
     workspaceId: string,
     message: string,
   ): Promise<ProcessResult & { readonly receiptId: string }> {
-    const receiptId = randomUUID();
+    const { receiptId, record } = this.#writeAudit(
+      principal, "git.commit", "git_commit", workspaceId, "",
+    );
     const normalizedMessage = message.trim();
     const messageSha256 = sha256(message);
     try {
@@ -1941,14 +1882,8 @@ export class WindowsAdapter {
         ),
         "git commit",
       );
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "git.commit",
-        operation: "git_commit",
+      record({
         outcome: "succeeded",
-        workspaceId,
-        requestedPath: "",
         details: {
           messageSha256,
           exitCode: result.exitCode,
@@ -1957,14 +1892,8 @@ export class WindowsAdapter {
       });
       return { ...result, receiptId };
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "git.commit",
-        operation: "git_commit",
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: "",
         errorCode: codeOf(error),
         details: { messageSha256 },
       });
@@ -1992,32 +1921,22 @@ export class WindowsAdapter {
     workspaceId: string,
     allowedDomains: readonly string[],
   ): Promise<BrowserSessionSummary & { readonly receiptId: string }> {
-    const receiptId = randomUUID();
+    const { receiptId, record } = this.#writeAudit(
+      principal, "browser.session.create", "create_managed_browser_session", workspaceId, "",
+    );
     try {
       this.#require(principal, workspaceId, ["browser.control", "network.access"]);
       this.#guard(workspaceId);
       const session = await this.#browser.create(allowedDomains);
       this.#browserWorkspaces.set(session.id, workspaceId);
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "browser.session.create",
-        operation: "create_managed_browser_session",
+      record({
         outcome: "succeeded",
-        workspaceId,
-        requestedPath: "",
         details: { sessionId: session.id, allowedDomains: session.allowedDomains },
       });
       return { ...session, receiptId };
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "browser.session.create",
-        operation: "create_managed_browser_session",
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: "",
         errorCode: codeOf(error),
         details: { allowedDomains },
       });
@@ -2039,19 +1958,15 @@ export class WindowsAdapter {
     sessionId: string,
     url: string,
   ): Promise<BrowserObservation & { readonly receiptId: string }> {
-    const receiptId = randomUUID();
+    const { receiptId, record } = this.#writeAudit(
+      principal, "browser.navigate", "navigate_managed_browser", workspaceId, "",
+    );
     try {
       this.#require(principal, workspaceId, ["browser.control", "network.access"]);
       this.#requireBrowserWorkspace(workspaceId, sessionId);
       const observation = await this.#browser.navigate(sessionId, url);
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "browser.navigate",
-        operation: "navigate_managed_browser",
+      record({
         outcome: "succeeded",
-        workspaceId,
-        requestedPath: "",
         details: {
           sessionId,
           targetOrigin: new URL(url).origin,
@@ -2061,14 +1976,8 @@ export class WindowsAdapter {
       });
       return { ...observation, receiptId };
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "browser.navigate",
-        operation: "navigate_managed_browser",
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: "",
         errorCode: codeOf(error),
         details: { sessionId, urlSha256: sha256(url) },
       });
@@ -2094,19 +2003,15 @@ export class WindowsAdapter {
     expectedRevision: string,
     ref: string,
   ): Promise<BrowserObservation & { readonly receiptId: string }> {
-    const receiptId = randomUUID();
+    const { receiptId, record } = this.#writeAudit(
+      principal, "browser.click", "click_managed_browser_element", workspaceId, "",
+    );
     try {
       this.#require(principal, workspaceId, ["browser.control", "network.access"]);
       this.#requireBrowserWorkspace(workspaceId, sessionId);
       const observation = await this.#browser.click(sessionId, expectedRevision, ref);
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "browser.click",
-        operation: "click_managed_browser_element",
+      record({
         outcome: "succeeded",
-        workspaceId,
-        requestedPath: "",
         details: {
           sessionId,
           ref,
@@ -2117,14 +2022,8 @@ export class WindowsAdapter {
       });
       return { ...observation, receiptId };
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "browser.click",
-        operation: "click_managed_browser_element",
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: "",
         errorCode: codeOf(error),
         details: { sessionId, ref, expectedRevision },
       });
@@ -2142,7 +2041,9 @@ export class WindowsAdapter {
     replace = true,
     submit = false,
   ): Promise<BrowserObservation & { readonly receiptId: string }> {
-    const receiptId = randomUUID();
+    const { receiptId, record } = this.#writeAudit(
+      principal, "browser.type", "type_managed_browser_element", workspaceId, "",
+    );
     const textSha256 = sha256(text);
     try {
       this.#require(principal, workspaceId, ["browser.control", "network.access"]);
@@ -2155,14 +2056,8 @@ export class WindowsAdapter {
         replace,
         submit,
       );
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "browser.type",
-        operation: "type_managed_browser_element",
+      record({
         outcome: "succeeded",
-        workspaceId,
-        requestedPath: "",
         details: {
           sessionId,
           ref,
@@ -2177,14 +2072,8 @@ export class WindowsAdapter {
       });
       return { ...observation, receiptId };
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "browser.type",
-        operation: "type_managed_browser_element",
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: "",
         errorCode: codeOf(error),
         details: {
           sessionId,
@@ -2206,32 +2095,22 @@ export class WindowsAdapter {
     sessionId: string,
     expression: string,
   ): Promise<{ readonly result: unknown; readonly receiptId: string }> {
-    const receiptId = randomUUID();
+    const { receiptId, record } = this.#writeAudit(
+      principal, "browser.evaluate", "evaluate_managed_browser", workspaceId, "",
+    );
     const expressionSha256 = sha256(expression);
     try {
       this.#require(principal, workspaceId, ["browser.control"]);
       this.#requireBrowserWorkspace(workspaceId, sessionId);
       const result = await this.#browser.evaluate(sessionId, expression);
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "browser.evaluate",
-        operation: "evaluate_managed_browser",
+      record({
         outcome: "succeeded",
-        workspaceId,
-        requestedPath: "",
         details: { sessionId, expressionSha256 },
       });
       return { result, receiptId };
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "browser.evaluate",
-        operation: "evaluate_managed_browser",
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: "",
         errorCode: codeOf(error),
         details: { sessionId, expressionSha256 },
       });
@@ -2244,31 +2123,21 @@ export class WindowsAdapter {
     workspaceId: string,
     sessionId: string,
   ): Promise<BrowserSessionSummary & { readonly receiptId: string }> {
-    const receiptId = randomUUID();
+    const { receiptId, record } = this.#writeAudit(
+      principal, "browser.session.close", "close_managed_browser_session", workspaceId, "",
+    );
     try {
       this.#require(principal, workspaceId, ["browser.control"]);
       this.#requireBrowserWorkspace(workspaceId, sessionId);
       const session = await this.#browser.close(sessionId);
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "browser.session.close",
-        operation: "close_managed_browser_session",
+      record({
         outcome: "succeeded",
-        workspaceId,
-        requestedPath: "",
         details: { sessionId },
       });
       return { ...session, receiptId };
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "browser.session.close",
-        operation: "close_managed_browser_session",
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: "",
         errorCode: codeOf(error),
         details: { sessionId },
       });
@@ -2313,7 +2182,9 @@ export class WindowsAdapter {
     artifactPaths: readonly string[] = [],
     timeoutMs = this.#processTimeoutMs,
   ): Promise<RunRecord> {
-    const receiptId = randomUUID();
+    const { record } = this.#writeAudit(
+      principal, "python.start", "start_python_run", workspaceId, relativeCwd,
+    );
     let normalizedCwd: string | undefined;
     let normalizedScriptPath: string | undefined;
     const codeSha256 = code === undefined ? undefined : sha256(code);
@@ -2425,14 +2296,8 @@ export class WindowsAdapter {
           networkIsolation: false,
         },
       });
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "python.start",
-        operation: "start_python_run",
+      record({
         outcome: "succeeded",
-        workspaceId,
-        requestedPath: relativeCwd,
         relativePath: cwd.relativePath,
         details: {
           runId: run.id,
@@ -2445,14 +2310,8 @@ export class WindowsAdapter {
       });
       return run;
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "python.start",
-        operation: "start_python_run",
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: relativeCwd,
         ...(normalizedCwd === undefined ? {} : { relativePath: normalizedCwd }),
         errorCode: codeOf(error),
         details: {
@@ -2498,7 +2357,9 @@ export class WindowsAdapter {
     relativeCwd = "",
     timeoutMs = 900_000,
   ): Promise<RunRecord> {
-    const receiptId = randomUUID();
+    const { record } = this.#writeAudit(
+      principal, "workflow.start", "start_workflow_run", workspaceId, relativeCwd,
+    );
     let normalizedCwd: string | undefined;
     const stepMetadata: Readonly<Record<string, unknown>>[] = [];
     try {
@@ -2610,27 +2471,15 @@ export class WindowsAdapter {
           timeoutMs,
         },
       });
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "workflow.start",
-        operation: "start_workflow_run",
+      record({
         outcome: "succeeded",
-        workspaceId,
-        requestedPath: relativeCwd,
         relativePath: cwd.relativePath,
         details: { runId: run.id, label: normalizedLabel, steps: stepMetadata, timeoutMs },
       });
       return run;
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "workflow.start",
-        operation: "start_workflow_run",
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
-        requestedPath: relativeCwd,
         ...(normalizedCwd === undefined ? {} : { relativePath: normalizedCwd }),
         errorCode: codeOf(error),
         details: { label, steps: stepMetadata, timeoutMs },
@@ -2663,7 +2512,9 @@ export class WindowsAdapter {
     expectedRevision: string,
     input: ComputerActionInput,
   ): Promise<ComputerObservation & { readonly receiptId: string }> {
-    const receiptId = randomUUID();
+    const { receiptId, record } = this.#writeAudit(
+      principal, "computer.action", input.operation, workspaceId, "",
+    );
     let action: ComputerAction;
     let requestedPath = "";
     try {
@@ -2684,13 +2535,8 @@ export class WindowsAdapter {
         action = input;
       }
       const observation = await this.#computer.act(expectedRevision, action);
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "computer.action",
-        operation: input.operation,
+      record({
         outcome: "succeeded",
-        workspaceId,
         requestedPath,
         ...(requestedPath.length === 0 ? {} : { relativePath: requestedPath }),
         details: {
@@ -2702,13 +2548,8 @@ export class WindowsAdapter {
       });
       return { ...observation, receiptId };
     } catch (error) {
-      this.#appendWriteReceipt({
-        id: receiptId,
-        principal,
-        toolName: "computer.action",
-        operation: input.operation,
+      record({
         outcome: outcomeOf(error),
-        workspaceId,
         requestedPath,
         ...(requestedPath.length === 0 ? {} : { relativePath: requestedPath }),
         errorCode: codeOf(error),

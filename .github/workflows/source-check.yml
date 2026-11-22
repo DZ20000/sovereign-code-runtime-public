@@ -22,7 +22,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '24.13.0'
+          node-version: '24.22.1'
       - run: npm install --global pnpm@10.15.1
       - run: pnpm install --frozen-lockfile
       - name: Canonicalize Windows temporary directory
@@ -36,6 +36,10 @@ jobs:
           "TMP=$canonicalTemp" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Verify canonical Windows temporary directory
         run: node --input-type=module -e "import { realpathSync } from 'node:fs'; const actual = realpathSync.native(process.env.TEMP); if (actual.toLowerCase() !== process.env.TEMP.toLowerCase() || process.env.TMP.toLowerCase() !== actual.toLowerCase()) process.exit(1);"
+      - name: Test public release boundary checks
+        run: node --test scripts/public-source-check.test.mjs
+      - name: Check public source for private state and credentials
+        run: node scripts/public-source-check.mjs --root .
       - run: pnpm typecheck
       - name: Build native Windows agent
         run: pnpm --filter @sovereign/desktop run build:native
@@ -68,7 +72,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '24.13.0'
+          node-version: '24.22.1'
       - run: npm install --global pnpm@10.15.1
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm audit

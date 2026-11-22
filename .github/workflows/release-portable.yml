@@ -1,0 +1,168 @@
+name: Windows Portable release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portable-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  source-check:
+    name: Require checked release source
+    runs-on: windows-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
+      version: ${{ steps.source.outputs.version }}
+      tag: ${{ steps.source.outputs.tag }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify main-line tag and successful source checks
+        id: source
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ($env:GITHUB_REF_TYPE -ne 'tag') { throw 'Dispatch this workflow on a version tag.' }
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$' -or $env:GITHUB_REF_NAME -cne "v$version") {
+            throw 'The tag must equal v plus the committed product version.'
+          }
+          $commit = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve release commit.' }
+          git merge-base --is-ancestor $commit origin/main
+          if ($LASTEXITCODE -ne 0) { throw 'Release tags must point to commits already merged into origin/main.' }
+          $deadline = [DateTime]::UtcNow.AddMinutes(35)
+          $accepted = $false
+          do {
+            $response = gh api "repos/$env:GITHUB_REPOSITORY/actions/workflows/source-check.yml/runs?head_sha=$commit&per_page=100"
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot read source-check results.' }
+            $runs = @((($response | ConvertFrom-Json).workflow_runs) | Where-Object {
+              $_.head_sha -eq $commit -and $_.event -in @('push', 'workflow_dispatch') -and
+              $_.head_repository.full_name -eq $env:GITHUB_REPOSITORY
+            })
+            $passed = $runs | Where-Object { $_.status -eq 'completed' -and $_.conclusion -eq 'success' } |
+              Sort-Object id -Descending | Select-Object -First 1
+            if ($passed) {
+              $response = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$($passed.id)/jobs?per_page=100"
+              if ($LASTEXITCODE -ne 0) { throw 'Cannot read source-check jobs.' }
+              $jobs = ($response | ConvertFrom-Json).jobs
+              foreach ($name in @('source', 'full-dependency-audit', 'android-source')) {
+                if (-not ($jobs | Where-Object { $_.name -eq $name -and $_.conclusion -eq 'success' })) {
+                  throw "The required source-check job did not pass: $name"
+                }
+              }
+              $accepted = $true
+              break
+            }
+            if ($runs.Count -gt 0 -and -not ($runs | Where-Object { $_.status -ne 'completed' })) {
+              throw 'Source checks failed or were cancelled; repair and rerun them before release.'
+            }
+            Start-Sleep -Seconds 20
+          } while ([DateTime]::UtcNow -lt $deadline)
+          if (-not $accepted) { throw 'No successful source-check workflow for this exact commit.' }
+          "commit=$commit" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$env:GITHUB_REF_NAME" >> $env:GITHUB_OUTPUT
+
+  build:
+    name: Build clean Windows x64 Portable
+    needs: source-check
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.source-check.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.22.1'
+      - run: npm install --global pnpm@10.15.1
+      - run: pnpm install --frozen-lockfile
+      - name: Prepare Rust MSVC toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.95.0 --profile minimal --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup default 1.95.0
+      - name: Canonicalize Windows temporary directory
+        shell: pwsh
+        run: |
+          $canonicalTemp = node --input-type=module -e "import { realpathSync } from 'node:fs'; process.stdout.write(realpathSync.native(process.env.TEMP));"
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($canonicalTemp)) { throw 'Cannot resolve TEMP.' }
+          "TEMP=$canonicalTemp" >> $env:GITHUB_ENV
+          "TMP=$canonicalTemp" >> $env:GITHUB_ENV
+      - run: pnpm --filter @sovereign/desktop-tauri run test:portable-release
+      - name: Rebuild, smoke, and archive only public release files
+        run: pnpm --filter @sovereign/desktop-tauri run release:portable
+      - name: Confirm build did not modify source
+        shell: pwsh
+        run: |
+          git diff --exit-code
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (git ls-files --others --exclude-standard) { throw 'Build left untracked source files.' }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: windows-portable
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+          path: |
+            apps/desktop-tauri/artifacts/release/SovereignCodeRuntime-${{ needs.source-check.outputs.version }}-windows-x64.zip
+            apps/desktop-tauri/artifacts/release/SovereignCodeRuntime-${{ needs.source-check.outputs.version }}-windows-x64.zip.sha256
+
+  publish:
+    name: Publish GitHub Release
+    needs: [source-check, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: windows-portable
+          path: release-assets
+      - name: Verify downloaded assets and publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ needs.source-check.outputs.version }}
+          RELEASE_TAG: ${{ needs.source-check.outputs.tag }}
+          RELEASE_COMMIT: ${{ needs.source-check.outputs.commit }}
+        run: |
+          set -euo pipefail
+          cd release-assets
+          asset="SovereignCodeRuntime-${RELEASE_VERSION}-windows-x64.zip"
+          actual_commit="$(gh api "repos/${GH_REPO}/commits/${RELEASE_TAG}" --jq .sha)"
+          test "$actual_commit" = "$RELEASE_COMMIT"
+          sha256sum --check "${asset}.sha256"
+          cat > ../release-notes.md <<EOF
+          Windows x64 Portable, rebuilt from source commit ${RELEASE_COMMIT}.
+
+          Download ${asset} and its .sha256 file, verify the hash, then extract the whole ZIP and launch SovereignCodeRuntime.exe.
+          Windows 10/11 x64 and Microsoft Edge WebView2 Runtime are required. Node.js is bundled; Node, pnpm, and Rust do not need to be installed by users.
+
+          The archive includes source provenance, component hashes, installation instructions, and public notices.
+          See the bundled README.md for setup and optional connections. No user profiles, local configuration, credentials, or smoke reports are included.
+          EOF
+          flags=()
+          if [[ "$RELEASE_VERSION" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" "$asset" "${asset}.sha256" \
+            --verify-tag --title "Sovereign Code Runtime ${RELEASE_VERSION}" \
+            --notes-file ../release-notes.md "${flags[@]}"
